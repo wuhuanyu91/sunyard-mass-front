@@ -1,0 +1,31 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist.zip
+
+# 开发工具 / 会话缓存（非项目内容）
+.qoder/
+-back/
+
+# 本地临时文件（脚本中转产物）
+maas/_*.txt
+maas/_verify_png.py
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 部署凭据（含服务器 IP/口令，不入库；模板见 cicd/deploy.properties.example）
+cicd/deploy.properties
+
+# 文档开发过程截图（doc 下仅保留 md 文档）
+doc/*.png
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/

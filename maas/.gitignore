@@ -1,0 +1,21 @@
+# 依赖
+node_modules
+
+# 构建产物
+dist
+dist-ssr
+
+# 日志
+*.local
+logs
+*.log
+npm-debug.log*
+
+# 编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# 演示数据（若生成临时文件）
+*.tmp

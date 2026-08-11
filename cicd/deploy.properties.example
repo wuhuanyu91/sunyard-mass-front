@@ -1,0 +1,44 @@
+# ============================================================
+# MAAS 平台自动部署配置模板
+# 使用方法：复制为 deploy.properties 并填写真实环境信息（该文件已被 .gitignore 排除）
+#   cp cicd/deploy.properties.example cicd/deploy.properties
+# 部署形态：与存量 findata 共用 19095 端口，路径前缀隔离：
+#   - 访问地址：http://<HOST>:19095/maas-web/
+#   - 部署目录：/mnt/bobo/service_ningbo/maas-web
+#   - nginx：在 19095 server 块内以 location /maas-web/ 挂载
+# ============================================================
+
+# 默认发布清单：前端产物 + nginx 合并配置 + 旧配置清理
+enable = maas-web, maas-nginx-config, maas-nginx-cleanup
+
+# Environment: dev（预留）
+env.dev.ip = 127.0.0.1
+env.dev.user = root
+env.dev.pwd = password
+
+# Environment: sit
+env.sit.ip = <SERVER_IP>
+env.sit.port = 22
+env.sit.user = root
+env.sit.pwd = <SERVER_PASSWORD>
+
+# ---------------- Project: maas-web（前端打包 + 上传 + reload） ----------------
+maas-web.compile.cmd = npm install && npm run build
+maas-web.compile.path = ./maas
+maas-web.compile.objectcodepath = ./maas/dist
+maas-web.target.init = mkdir -p /mnt/bobo/service_ningbo/maas-web
+maas-web.target.objectcodepathuppath = /mnt/bobo/service_ningbo/maas-web
+maas-web.target.run = cd /mnt/bobo/service_ningbo/maas-web && unzip -o dist.zip && rm dist.zip && nginx -s reload
+
+# ---------------- Project: maas-nginx-config（下发含 /maas-web/ location 的 19095 配置） ----------------
+# 源文件在 salesstores 项目内（含 findata 原有配置 + MAAS location），保证 findata 重新发布时不丢失 MAAS 挂载
+maas-nginx-config.compile.cmd = echo "Deploying Nginx Config (19095 + /maas-web/)"
+maas-nginx-config.compile.path = .
+maas-nginx-config.compile.objectcodepath = ../salesstores/cicd/nginx.conf.d/findata-web.conf
+maas-nginx-config.target.objectcodepathuppath = /etc/nginx/conf.d/findata-web.conf
+maas-nginx-config.target.run = nginx -t && nginx -s reload
+
+# ---------------- Project: maas-nginx-cleanup（移除旧 19098 独立站点配置，幂等） ----------------
+maas-nginx-cleanup.compile.cmd = echo "Cleaning legacy maas-web.conf (19098)"
+maas-nginx-cleanup.compile.path = .
+maas-nginx-cleanup.target.run = rm -f /etc/nginx/conf.d/maas-web.conf && nginx -t && nginx -s reload

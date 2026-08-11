@@ -1,0 +1,606 @@
+@import "tailwindcss";
+
+/* 主题 token（V4：现代简约科技风，浅色为默认；深色主题可选） */
+/* 浅色语义色已加深至 WCAG 对比度达标（小字/浅底前景色可读） */
+@theme {
+  --color-bg-page: #f8fafc;
+  --color-bg-panel: rgba(255, 255, 255, 0.7);
+  --color-bg-panel-soft: rgba(255, 255, 255, 0.4);
+  --color-border-default: rgba(226, 232, 240, 0.8);
+  --color-primary: #2563eb;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --font-mono: "Roboto Mono", ui-monospace, "SFMono-Regular", monospace;
+  /* 字体优化：全局提升基础字号（12→13 / 14→15），管理平台最佳可读性 */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5rem;
+}
+
+/* ---------------- 深色主题（现代简约科技风，深邃通透） ---------------- */
+html[data-theme='dark'] {
+  --color-bg-page: #030712; /* Slate 950 极致深邃 */
+  --color-bg-panel: rgba(30, 41, 59, 0.4); /* Slate 800 半透 */
+  --color-bg-panel-soft: rgba(15, 23, 42, 0.4); /* Slate 900 半透 */
+  --color-border-default: rgba(255, 255, 255, 0.1);
+  --color-primary: #0ea5e9; /* Sky 500 科技蓝 */
+  --color-success: #10b981; /* Emerald 500 */
+  --color-warning: #f59e0b; /* Amber 500 */
+  --color-danger: #ef4444;  /* Red 500 */
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #94a3b8;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+@keyframes orb-float {
+  0% { transform: translate(0, 0) scale(1); opacity: 0.8; }
+  50% { transform: translate(10px, -15px) scale(1.02); opacity: 1; }
+  100% { transform: translate(0, 0) scale(1); opacity: 0.8; }
+}
+
+body {
+  background-color: var(--color-bg-page);
+  color: var(--color-text-primary);
+  /* 控制台字体栈（对齐硅基流动）：Inter/鸿蒙黑体打头，系统栈兜底，中文苹方/雅黑 */
+  font-family: Inter, "HarmonyOS Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* Glassmorphism 基底：多彩渐变光斑（玻璃面板可透视） */
+  background-image:
+    radial-gradient(900px 520px at 85% -10%, rgba(37, 99, 235, 0.08), transparent 62%),
+    radial-gradient(820px 500px at -12% 28%, rgba(14, 165, 233, 0.08), transparent 58%),
+    radial-gradient(760px 420px at 55% 112%, rgba(5, 150, 105, 0.06), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* 伪元素承载动态光斑以提升性能 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -10%;
+  z-index: -1;
+  background-image: inherit;
+  background-size: cover;
+  animation: orb-float 32s ease-in-out infinite;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* 深色主题 body：暗色玻璃基底 + 科技感霓虹光斑 */
+html[data-theme='dark'] body {
+  background-image: none; /* 移除静态底 */
+}
+html[data-theme='dark'] body::before {
+  background-image:
+    radial-gradient(1000px 540px at 85% -10%, rgba(14, 165, 233, 0.12), transparent 62%),
+    radial-gradient(820px 480px at -12% 108%, rgba(56, 189, 248, 0.1), transparent 58%),
+    radial-gradient(700px 400px at 108% 85%, rgba(16, 185, 129, 0.08), transparent 60%);
+}
+
+/* 基础交互元素毛玻璃化（降低模糊度，保证表单可读性） */
+button, input, select, textarea {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* 面板统一规格：Glassmorphism 高级磨砂玻璃卡 */
+.panel {
+  background: rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 12px; /* 回归企业级稳定圆角 */
+  position: relative;
+  box-shadow:
+    0 4px 20px -6px rgba(15, 23, 42, 0.05),
+    inset 0 1px 1px rgba(255, 255, 255, 1);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+html[data-theme='dark'] .panel {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 8px 30px -8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px rgba(255, 255, 255, 0.05);
+}
+
+/* 玻璃栏：顶栏 / 侧边栏（强模糊，悬浮感） */
+.app-glass-bar {
+  background: rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(24px) saturate(200%);
+  backdrop-filter: blur(24px) saturate(200%);
+  border-color: rgba(226, 232, 240, 0.8);
+}
+html[data-theme='dark'] .app-glass-bar {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* 抽屉 / 弹窗：厚重磨砂玻璃 */
+.drawer-in,
+.modal-in {
+  background: rgba(255, 255, 255, 0.95);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  backdrop-filter: blur(32px) saturate(200%);
+  border-left: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.05);
+}
+html[data-theme='dark'] .drawer-in,
+html[data-theme='dark'] .modal-in {
+  background: rgba(15, 23, 42, 0.95);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+}
+
+/* 悬浮玻璃（网关 Agent 等悬浮组件） */
+.glass-float {
+  background: rgba(255, 255, 255, 0.75);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(31, 38, 135, 0.1);
+}
+html[data-theme='dark'] .glass-float {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* ================================================================
+   .console 管理风作用域（事务型页面：去玻璃化 / 去大屏化）
+   驾驶舱等展示型大屏保留玻璃拟态科技风；计量、资产、安全、
+   控制面、工作台等管理页挂 .console，面板为不透明实色卡片。
+   ================================================================ */
+.console .panel {
+  background: #ffffff;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px; /* 云厂商控制台惯例：小圆角边框分割，几乎零阴影 */
+  box-shadow: none;
+}
+html[data-theme='dark'] .console .panel {
+  background: #17233b;
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: none;
+}
+/* 管理页取消面板顶部光锋（大屏专属装饰） */
+html[data-theme='dark'] .console .panel::before {
+  display: none;
+}
+/* 管理页悬浮微交互：仅加深阴影，不做浮起缩放发光 */
+.console .hover-lift:hover {
+  transform: none;
+  box-shadow: 0 4px 12px -4px rgba(15, 23, 42, 0.12);
+}
+html[data-theme='dark'] .console .hover-lift:hover {
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* ================================================================
+   html.console-page 管理台全局态（对标阿里云/火山引擎控制台）
+   由 MainLayout 按路由切换：管理页挂上后——
+   ① 去除 body 渐变光斑与漂浮动效，页面底为纯灰
+   ② 顶栏/侧栏去毛玻璃改纯实色
+   ③ 表单控件取消 backdrop-filter
+   ④ 品牌渐变字改实色
+   ================================================================ */
+html.console-page body {
+  background-image: linear-gradient(180deg, rgba(37, 99, 235, 0.05), rgba(247, 248, 250, 0) 260px);
+  background-color: #f7f8fa; /* 对齐硅基流动控制台页面底色 */
+}
+html.console-page body::before {
+  display: none;
+}
+html[data-theme='dark'].console-page body {
+  background-color: var(--color-bg-page);
+}
+html.console-page .app-glass-bar {
+  background: #ffffff;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: #e5e6eb;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+html[data-theme='dark'].console-page .app-glass-bar {
+  background: #101a2e;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+html.console-page button,
+html.console-page input,
+html.console-page select,
+html.console-page textarea {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html.console-page .text-gradient {
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--color-text-primary);
+}
+/* 管理页正文基准字号 14px（对齐硅基流动控制台；显式 tailwind 字号不受影响） */
+main.console {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ================================================================
+   设计感点缀（仅管理页）：蓝紫品牌渐变 + 层次光影，克制统一
+   ================================================================ */
+/* 品牌渐变：logo / 面板标题竖条 / 页头下划线 / 主按钮 */
+.grad-brand {
+  background-image: linear-gradient(135deg, #2563eb, #6366f1);
+}
+/* 品牌卡：低饱和淡蓝渐变（浅色）/ 柔和深蓝（暗色），与页面底色差小、不突兀 */
+.brand-card {
+  background-image: linear-gradient(135deg, #eef4ff, #e7eeff 45%, #e0e9ff);
+  border: 1px solid rgba(37, 99, 235, 0.12);
+}
+html[data-theme='dark'] .brand-card {
+  background-image: linear-gradient(135deg, #16233f, #1a2f56);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+main.console .grad-brand {
+  box-shadow: 0 2px 6px -2px rgba(99, 102, 241, 0.45);
+}
+/* 主按钮渐变化（console-page 作用域：页面内按钮 + 弹窗内按钮） */
+html.console-page .bg-primary {
+  background-image: linear-gradient(135deg, #2563eb, #6366f1);
+  background-color: #2563eb;
+}
+html.console-page .bg-primary.hover\:bg-primary\/90:hover {
+  filter: brightness(1.07);
+}
+html.console-page .bg-primary:disabled {
+  background-image: none;
+  box-shadow: none;
+}
+html[data-theme='dark'].console-page .bg-primary {
+  background-image: linear-gradient(135deg, #3370ff, #5b8cff);
+  background-color: #3370ff;
+}
+/* 卡片微光影：比零阴影多一层纵深，hover 轻微上浮 */
+main.console .panel {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+main.console .panel:hover {
+  box-shadow: 0 4px 14px -6px rgba(15, 23, 42, 0.09);
+}
+html[data-theme='dark'] main.console .panel {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+html[data-theme='dark'] main.console .panel:hover {
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.4);
+}
+
+/* ================================================================
+   设计标准化（.console 作用域）：统一圆角体系 / 表格规范
+   圆角规范：卡片块 8px（panel/rounded-lg/xl 归一）、
+   小控件 6px（按钮/输入框/标签 rounded→6px）；大屏不受影响
+   ================================================================ */
+.console .rounded-xl,
+.console .rounded-2xl {
+  border-radius: 8px;
+}
+.console .rounded {
+  border-radius: 6px;
+}
+/* 表格规范：表头统一字重与不换行（台账表格对齐云厂商口径） */
+.console table th {
+  font-weight: 500;
+  white-space: nowrap;
+}
+/* 管理页弹窗/抽屉：去毛玻璃改纯实色，阴影收敛（云厂商控制台惯例） */
+html.console-page .modal-in,
+html.console-page .drawer-in {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: #ffffff;
+  box-shadow: 0 6px 24px -8px rgba(15, 23, 42, 0.16);
+}
+html[data-theme='dark'].console-page .modal-in,
+html[data-theme='dark'].console-page .drawer-in {
+  background: #17233b;
+  box-shadow: 0 6px 24px -8px rgba(0, 0, 0, 0.5);
+}
+/* 管理页悬浮组件（网关 Agent）实色化 */
+html.console-page .glass-float {
+  background: #ffffff;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: #e5e6eb;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+html[data-theme='dark'].console-page .glass-float {
+  background: #17233b;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+/* 管理页入场动效弱化：更短更浅，接近无感（控制台不做表演性动画） */
+main.console > * {
+  animation-duration: 0.15s;
+}
+
+/* 暗色主题管理页：去霜蓝霓虹感，转中性商务暗色（对标云厂商暗色控制台）
+   大屏（非 console-page）仍保留 sky 科技蓝 */
+html[data-theme='dark'].console-page {
+  --color-bg-page: #0f1522;
+  --color-primary: #3370ff;
+  --color-bg-panel: #17233b;
+  --color-bg-panel-soft: rgba(23, 35, 59, 0.6);
+}
+html[data-theme='dark'].console-page button:focus-visible,
+html[data-theme='dark'].console-page input:focus-visible,
+html[data-theme='dark'].console-page select:focus-visible,
+html[data-theme='dark'].console-page textarea:focus-visible {
+  outline-color: rgba(51, 112, 255, 0.5);
+}
+
+/* 深色主题：面板顶部渐变光锋，增强科技边缘感（仅大屏） */
+html[data-theme='dark'] .panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(14, 165, 233, 0.4), transparent);
+  pointer-events: none;
+  border-radius: 50%;
+}
+
+/* 渐变文字（品牌）：现代科技蓝紫 */
+.text-gradient {
+  background: linear-gradient(135deg, #0ea5e9 0%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html[data-theme='dark'] .text-gradient {
+  background-image: linear-gradient(135deg, #38bdf8 0%, #a78bfa 100%);
+}
+
+/* 悬浮微交互：玻璃浮起并发光 */
+.hover-lift {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-3px) scale(1.01);
+}
+html[data-theme='dark'] .hover-lift:hover {
+  box-shadow: 0 12px 30px -10px rgba(14, 165, 233, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* 入场动效：页面内容上浮 / 抽屉滑入 / 弹窗缩放（easeOutQuint 丝滑曲线） */
+@keyframes maas-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+main > * {
+  animation: maas-fade-up 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes maas-drawer-in {
+  from {
+    transform: translateX(40px);
+    opacity: 0.2;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.drawer-in {
+  animation: maas-drawer-in 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes maas-modal-in {
+  from {
+    transform: scale(0.94) translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.modal-in {
+  animation: maas-modal-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 遮罩淡入（抽屉/弹窗背景） */
+@keyframes maas-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.overlay-in {
+  animation: maas-overlay-in 0.24s ease-out;
+}
+
+/* 主题切换柔和过渡（避免背景色突变） */
+body,
+.app-glass-bar {
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+/* 主滚动区平滑滚动 */
+main {
+  scroll-behavior: smooth;
+}
+
+/* 按钮按压微回弹（丝滑触感） */
+button:not(:disabled) {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* 指针语义：可点元素悬停变手指，禁用态变禁止符 */
+button:not(:disabled),
+a,
+select,
+summary,
+label[for],
+[role='button']:not([aria-disabled='true']),
+[role='tab'] {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+/* 键盘可达性：焦点环 */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.5);
+  outline-offset: 1px;
+}
+
+html[data-theme='dark'] button:focus-visible,
+html[data-theme='dark'] input:focus-visible,
+html[data-theme='dark'] select:focus-visible,
+html[data-theme='dark'] textarea:focus-visible {
+  outline-color: rgba(24, 195, 255, 0.55);
+}
+
+/* 图表 tooltip 主题自适应（浅色默认白底，深色高对比深底） */
+:root {
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-border: #dbe3ef;
+}
+html[data-theme='dark'] {
+  --chart-tooltip-bg: #1b2a44;
+  --chart-tooltip-border: #3a5a8c;
+}
+
+/* 饼图/旭日图扇区悬停增亮（避免 hover 时变暗看不清） */
+.recharts-pie-sector path {
+  transition: filter 0.15s ease, opacity 0.15s ease;
+  cursor: pointer;
+}
+.recharts-pie-sector:hover path {
+  filter: brightness(1.28);
+}
+
+/* 微型角标/说明文字抬升：10px→11px、11px→12px（属性选择器全局生效，不影响布局紧凑度） */
+[class*="text-[10px]"] {
+  font-size: 0.6875rem;
+}
+[class*="text-[11px]"] {
+  font-size: 0.75rem;
+}
+
+/* 等宽数字（规范 5.4） */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* 滚动条（深色主题 thumb 更深） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c9d3e2;
+  border-radius: 4px;
+}
+html[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 拓扑节点脉冲（故障态） */
+@keyframes pulse-node {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 77, 109, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 77, 109, 0);
+  }
+}
+.pulse-danger {
+  animation: pulse-node 1.6s ease-in-out infinite;
+}
+
+/* ================================================================
+   登录页（左紫蓝渐变插画约 3/5 + 右浅色表单区，固定浅色视觉）
+   ================================================================ */
+.login-hero {
+  background-image:
+    radial-gradient(420px 280px at 82% 10%, rgba(255, 255, 255, 0.12), transparent 60%),
+    radial-gradient(380px 260px at 10% 82%, rgba(160, 190, 255, 0.14), transparent 60%),
+    linear-gradient(140deg, #4338ca 0%, #2f3fcf 42%, #1e40af 100%);
+}
+.login-ai-bg {
+  position: absolute;
+  right: -1rem;
+  bottom: 5rem;
+  font-size: 280px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.06em;
+  color: rgba(255, 255, 255, 0.09);
+  user-select: none;
+  pointer-events: none;
+}
+.login-cube {
+  position: absolute;
+  display: block;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.1));
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.16);
+  transform: rotateX(58deg) rotateZ(45deg);
+  animation: login-cube-float 9s ease-in-out infinite;
+  pointer-events: none;
+}
+.login-cube-1 { width: 84px; height: 84px; top: 16%; left: 8%; }
+.login-cube-2 { width: 46px; height: 46px; top: 60%; left: 15%; animation-delay: -3s; }
+.login-cube-3 { width: 30px; height: 30px; top: 28%; right: 12%; animation-delay: -6s; }
+@keyframes login-cube-float {
+  0%, 100% { transform: rotateX(58deg) rotateZ(45deg) translateY(0); }
+  50% { transform: rotateX(58deg) rotateZ(45deg) translateY(-16px); }
+}
+
+/* 折线/面积入场（尊重 reduced-motion） */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
