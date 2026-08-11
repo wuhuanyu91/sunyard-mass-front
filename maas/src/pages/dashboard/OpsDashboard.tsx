@@ -235,7 +235,7 @@ export default function OpsDashboard() {
                 </div>
               </div>
             ))}
-            <p className="mt-1 text-[10px] text-text-secondary/70">口径：P0/P1 在线任务优先保障，P2 离线批量仅错峰窗口调度，不抢占 P0/P1 资源。</p>
+            <p className="mt-1 text-[10px] text-text-secondary/70">P0/P1 在线任务优先保障，P2 离线批量仅错峰窗口调度，不抢占 P0/P1 资源。</p>
           </Panel>
         </div>
       </div>
@@ -291,7 +291,7 @@ export default function OpsDashboard() {
       </div>
 
       {/* 批处理吞吐与容量余量 */}
-      <Panel title="连续批处理吞吐（吞吐提升 ↔ 首字时延联动观察）" height={200} extra={<span className="text-xs text-text-secondary">八章：吞吐优化不能只追求最大化，须同时观察 TTFT 与业务 SLA</span>}>
+      <Panel title="连续批处理吞吐（吞吐提升 ↔ 首字时延联动观察）" height={200}>
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={batch} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
             <CartesianGrid stroke="rgba(142,163,184,0.12)" vertical={false} />

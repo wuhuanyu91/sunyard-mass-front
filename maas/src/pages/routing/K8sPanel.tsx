@@ -117,7 +117,7 @@ export default function K8sPanel() {
           ))}
         </tbody>
       </table>
-      <p className="pt-2 text-[11px] text-text-secondary/70">口径：模型实例以 Deployment 形态运行于 K8s，GPU 由设备插件直通（vGPU 切分在节点池层完成）；扩容/缩容联动容量预测，灰度命名空间隔离切流。</p>
+      <p className="pt-2 text-[11px] text-text-secondary/70">模型实例以 Deployment 形态运行于 K8s，GPU 由设备插件直通（vGPU 切分在节点池层完成）；扩容/缩容联动容量预测，灰度命名空间隔离切流。</p>
     </Panel>
   );
 }

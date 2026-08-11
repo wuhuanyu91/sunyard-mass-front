@@ -66,7 +66,7 @@ export default function CostModelPanel() {
       />
       <div className="grid grid-cols-12 gap-3">
       {/* 配置区：四类权重 + 口径参数 */}
-      <Panel title="TCO 成本模型配置" className="col-span-7" extra={<span className="text-xs text-text-secondary">九章：成本模型可配置，不固化单一分摊方式</span>}>
+      <Panel title="TCO 成本模型配置" className="col-span-7" extra={<span className="text-xs text-text-secondary">成本模型可配置，不固化单一分摊方式</span>}>
         <div className="flex flex-col gap-3.5">
           {KIND_META.map((k) => (
             <div key={k.key} className="rounded-lg border border-border-default bg-panel-soft px-3 py-2">
@@ -132,7 +132,7 @@ export default function CostModelPanel() {
           <p className="mt-2 text-[10px] text-text-secondary/70">合计恒等于 ¥684,000；四类之和 = 今日预估 TCO（驾驶舱同口径）。</p>
         </Panel>
 
-        <Panel title="自建 vs 外部租赁折算" height={150} extra={<span className="text-xs text-text-secondary">九章：两类资源统一计量、可比</span>}>
+        <Panel title="自建 vs 外部租赁折算" height={150} extra={<span className="text-xs text-text-secondary">两类资源统一计量、可比</span>}>
           <div className="flex items-center gap-2 text-xs text-text-secondary">
             <Calculator size={13} className="shrink-0 text-primary" />
             租赁池（CloudA H20）94GB 卡时成本 = 自建 H20 × <span className="num font-semibold text-primary">{cfg.rentalFactor.toFixed(2)}</span>
@@ -166,7 +166,7 @@ export default function CostModelPanel() {
           >
             <Save size={14} /> 保存并下发
           </button>
-          <p className="text-[10px] leading-relaxed text-text-secondary/70">保存将写入审计留痕；驾驶舱 TCO 明细、月度账单分摊与运维大盘同步采用新口径。具体财务口径由管理部门确认（九章）。</p>
+          <p className="text-[10px] leading-relaxed text-text-secondary/70">保存将写入审计留痕；驾驶舱 TCO 明细、月度账单分摊与运维大盘同步采用新口径。具体财务口径由管理部门确认。</p>
         </div>
       </div>
       </div>

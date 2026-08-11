@@ -188,7 +188,7 @@ export default function UserPanel() {
             })}
           </tbody>
         </table>
-        <p className="pt-2 text-[11px] text-text-secondary/70">口径：账号由行内统一身份认证签发，平台侧维护角色与状态；停用/删除即时失效在途会话并回收 Key，全部操作进入操作日志。</p>
+        <p className="pt-2 text-[11px] text-text-secondary/70">账号由行内统一身份认证签发，平台侧维护角色与状态；停用/删除即时失效在途会话并回收 Key，全部操作进入操作日志。</p>
       </Panel>
 
       {/* 新增 / 编辑账号 */}

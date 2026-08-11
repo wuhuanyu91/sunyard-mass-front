@@ -119,7 +119,7 @@ export function MonitorPanel() {
           );
         })}
       </div>
-      <p className="text-[11px] text-text-secondary/70">口径：服务健康 {healthy}/{svcs.length}，副本就绪 {readyReplicas}/{totalReplicas}；拨测由行内监控平台代理执行，本视图只读聚合，处置入口在运维值班流程。</p>
+      <p className="text-[11px] text-text-secondary/70">服务健康 {healthy}/{svcs.length}，副本就绪 {readyReplicas}/{totalReplicas}；拨测由行内监控平台代理执行，本视图只读聚合，处置入口在运维值班流程。</p>
     </>
   );
 }
@@ -471,7 +471,7 @@ export function ParamsPanel() {
             <ToggleSwitch checked={p.loginAnnounceEnabled} onChange={(v) => setP({ ...p, loginAnnounceEnabled: v })} />
           </div>
         </div>
-        <p className="pt-3 text-[11px] text-text-secondary/70">口径：参数变更即时生效并写操作日志；审计留存低于 180 天将被拦截，保障监管检查可回溯。</p>
+        <p className="pt-3 text-[11px] text-text-secondary/70">参数变更即时生效并写操作日志；审计留存低于 180 天将被拦截，保障监管检查可回溯。</p>
       </Panel>
     </>
   );

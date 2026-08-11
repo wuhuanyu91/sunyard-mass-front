@@ -136,7 +136,7 @@ export default function RoutingPanel() {
         <Overview label="近 24h 请求" value={fmtWan(overview.total)} unit="次" icon={<Zap size={14} />} tone="text-text-primary" hint={`成功率 ${summary?.successRate ?? 99.3}%`} />
         <Overview label="输入 Token" value={fmtWan(overview.prompt)} unit="Tokens" icon={<Activity size={14} />} tone="text-primary" hint="近 24h 输入 Token 总量" />
         <Overview label="输出 Token" value={fmtWan(overview.output)} unit="Tokens" icon={<Activity size={14} />} tone="text-success" hint="近 24h 输出 Token 总量" />
-        <Overview label="P95 时延" value={fmt(overview.p95)} unit="ms" icon={<Activity size={14} />} tone="text-warning" hint="avgLatency 长尾口径（8.1）" />
+        <Overview label="P95 时延" value={fmt(overview.p95)} unit="ms" icon={<Activity size={14} />} tone="text-warning" hint="avgLatency 长尾口径" />
       </div>
 
       {/* 路由漏斗（6.3.2） */}
@@ -168,7 +168,7 @@ export default function RoutingPanel() {
           <div className="flex flex-col gap-3">
             {notFound && (
               <Banner tone="warning">
-                未检索到该 TraceID，请确认时间范围（规范 6.3.7）
+                未检索到该 TraceID，请确认时间范围
               </Banner>
             )}
             <div className="flex gap-2">

@@ -96,7 +96,7 @@ export function RolePanel() {
             ))}
           </tbody>
         </table>
-        <p className="pt-2 text-[11px] text-text-secondary/70">口径：角色与行内岗位目录映射；自建角色创建后需在权限配置页完成模块授权方可使用，删除时关联账号回落业务查看员。</p>
+        <p className="pt-2 text-[11px] text-text-secondary/70">角色与行内岗位目录映射；自建角色创建后需在权限配置页完成模块授权方可使用，删除时关联账号回落业务查看员。</p>
       </Panel>
 
       {/* 新增角色 */}
@@ -254,7 +254,7 @@ export function PermPanel() {
             ))}
           </tbody>
         </table>
-        <p className="pt-2 text-[11px] text-text-secondary/70">口径：审批级 = 可发起并审批该域变更；读写级 = 可配置不可审批；变更即时下发网关鉴权，旧会话按新权限校验。</p>
+        <p className="pt-2 text-[11px] text-text-secondary/70">审批级 = 可发起并审批该域变更；读写级 = 可配置不可审批；变更即时下发网关鉴权，旧会话按新权限校验。</p>
       </Panel>
     </>
   );

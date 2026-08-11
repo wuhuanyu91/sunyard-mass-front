@@ -46,7 +46,7 @@ export default function BenefitPanel() {
       {/* 口径说明（十章：效益 = 成本 + 效果 + 价值综合判断） */}
       <div className="panel flex items-center gap-2 px-4 py-2.5 text-xs">
         <BarChart3 size={13} className="shrink-0 text-primary" />
-        <span className="text-text-secondary">评估口径：月度调用/成本与「模型统计」同源；活跃应用与用户规模来自计量回流；任务效果采纳率由应用侧回传；建议供模型治理委员会决策，不自动执行。</span>
+        <span className="text-text-secondary">评估说明：月度调用/成本与「模型统计」同源；活跃应用与用户规模来自计量回流；任务效果采纳率由应用侧回传；建议供模型治理委员会决策，不自动执行。</span>
       </div>
 
       {/* 汇总 */}

@@ -210,8 +210,8 @@ function MeteringOverview() {
         items={[
           { label: '输入 Token', value: fmtWan(kpi.input), unit: 'Tokens', hint: '近 24h 输入 Token（含失败/重试按开关）' },
           { label: '输出 Token', value: fmtWan(kpi.output), unit: 'Tokens', tone: 'text-success', hint: '近 24h 输出 Token' },
-          { label: '缓存命中', value: fmtWan(kpi.cacheHit), unit: 'Tokens', tone: 'text-warning', hint: 'Token 级缓存命中（8.1）' },
-          { label: '卡时', value: fmt(kpi.gpu), unit: 'GPU·h', hint: '卡时=GPU 卡数×计算时长（8.1）' },
+          { label: '缓存命中', value: fmtWan(kpi.cacheHit), unit: 'Tokens', tone: 'text-warning', hint: 'Token 级缓存命中' },
+          { label: '卡时', value: fmt(kpi.gpu), unit: 'GPU·h', hint: '卡时=GPU 卡数×计算时长' },
           { label: '调用量', value: fmt(kpi.calls), unit: '次', hint: '成功+失败+重试请求总次数' },
           { label: 'TCO', value: fmtYuan(kpi.tco), tone: 'text-danger', hint: '四类成本之和（含/不含失败重试由开关控制）' },
         ]}
@@ -318,7 +318,7 @@ function MeteringOverview() {
                 </div>
               ))}
               <div className="mt-1 border-t border-border-default pt-1.5 text-text-secondary">
-                口径：成本四类拆分；悬停扇形查看数值，悬停扇区自动增亮
+                成本按四类拆分；悬停扇区查看数值并自动增亮
               </div>
             </div>
           </div>
@@ -502,7 +502,7 @@ function MeteringOverview() {
                 <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">{b.calc}</p>
               </div>
             ))}
-            <p className="text-xs text-text-secondary">数据源口径见规范 8.1；建议采纳后生成工单并流转至策略治理（9.5 闭环）。</p>
+            <p className="text-xs text-text-secondary">建议采纳后生成工单并流转至策略治理。</p>
           </div>
         )}
       </Drawer>

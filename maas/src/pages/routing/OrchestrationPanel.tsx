@@ -130,7 +130,7 @@ export default function OrchestrationPanel() {
         </Panel>
 
         {/* -------- 优先级隔离 -------- */}
-        <Panel title="优先级隔离（P17）" height={260}>
+        <Panel title="优先级隔离" height={260}>
           <div className="space-y-3">
             {(['P0', 'P1', 'P2'] as const).map((p) => (
               <div key={p}>
@@ -153,7 +153,7 @@ export default function OrchestrationPanel() {
         </Panel>
 
         {/* -------- 连续批处理与 KV 缓存 -------- */}
-        <Panel title="连续批处理与 KV 缓存（P19）" height={300}>
+        <Panel title="连续批处理与 KV 缓存" height={300}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-sm text-text-primary">
@@ -182,7 +182,7 @@ export default function OrchestrationPanel() {
                   onChange={(v) => setConfig({ ...config, kvStrategy: v as OrchestrationConfig['kvStrategy'] })}
                 />
                 {config.kvStrategy === 'SEMANTIC' ? (
-                  <Banner tone="info">语义感知路由：同场景请求聚合至同实例，缓存命中率 25% → 50%+（P19 案例）</Banner>
+                  <Banner tone="info">语义感知路由：同场景请求聚合至同实例，缓存命中率 25% → 50%+</Banner>
                 ) : (
                   <p className="text-xs text-text-secondary">轮询调度下命中率约 25% 且波动较大，建议切换语义感知。</p>
                 )}
@@ -192,7 +192,7 @@ export default function OrchestrationPanel() {
         </Panel>
 
         {/* -------- 投机解码 -------- */}
-        <Panel title="投机解码（P20）" height={300}>
+        <Panel title="投机解码" height={300}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-sm text-text-primary">
@@ -219,7 +219,7 @@ export default function OrchestrationPanel() {
             )}
             <div className="rounded border border-border-default bg-panel-soft p-3 text-xs leading-relaxed text-text-secondary">
               <SlidersHorizontal size={13} className="mb-1 text-primary" />
-              推理加速四大支柱：模型调优 / 资源调度 / 推理加速 / 成本可视化（P22）。AI Coding 场景优化后并发 30→200（6.7 倍），成本降低 70~80%。
+              推理加速四大支柱：模型调优 / 资源调度 / 推理加速 / 成本可视化。AI Coding 场景优化后并发 30→200（6.7 倍），成本降低 70~80%。
             </div>
           </div>
         </Panel>
@@ -361,7 +361,7 @@ export default function OrchestrationPanel() {
             ))}
           </tbody>
         </table>
-        <p className="mt-2 text-[11px] text-text-secondary/70">口径：离线批量任务仅允许在错峰窗口（低峰时段）调度，优先级 P2/P3，不占用 P0/P1 在线资源（八章：在线与离线任务优先级隔离）。</p>
+        <p className="mt-2 text-[11px] text-text-secondary/70">离线批量任务仅允许在错峰窗口（低峰时段）调度，优先级 P2/P3，不占用 P0/P1 在线资源（在线与离线任务优先级隔离）。</p>
       </Panel>
 
       {/* -------- 错峰调度采纳 -------- */}

@@ -447,7 +447,7 @@ export default function ReleaseArchive() {
                 <div className="mt-1"><ProgressBar pct={v} tone={v >= 70 ? 'success' : v >= 40 ? 'primary' : 'danger'} /></div>
               </div>
             ))}
-            <p className="text-xs text-text-secondary">评分公式：算力成本 × 业务转化 × 风险识别准确率（P31）；A 战略 / B 核心 / C 通用 / D 候选下线。</p>
+            <p className="text-xs text-text-secondary">评分公式：算力成本 × 业务转化 × 风险识别准确率；A 战略 / B 核心 / C 通用 / D 候选下线。</p>
           </div>
         </Modal>
       )}

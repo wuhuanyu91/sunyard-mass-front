@@ -99,7 +99,7 @@ export default function GatewayAgent() {
       <button
         onClick={() => setOpen(true)}
         className="glass-float hover-lift fixed bottom-5 right-5 z-40 flex items-center gap-2.5 rounded-full border border-primary/40 py-1.5 pl-2 pr-4 text-sm font-medium text-text-primary transition-all hover:border-primary/70"
-        title="星舰 Copilot（P28）"
+        title="星舰 Copilot"
       >
         <span className="relative shrink-0">
           <img src={logoUrl} alt="" className="h-7 w-7 rounded-lg" />

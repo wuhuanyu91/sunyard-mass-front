@@ -93,7 +93,7 @@ export default function ComputePanel() {
         <Kpi icon={<Server size={15} />} label="纳管节点" value={`${kpi.nodes}`} unit={`个 · ${kpi.pools} 池`} hint="GPU/CPU/NPU/租赁 全量纳管节点" tone="text-primary" />
         <Kpi icon={<Gauge size={15} />} label="GPU 平均利用率" value={`${kpi.avgUtil}`} unit="%" hint="时间加权利用率（非显存占用，8.1）" tone={kpi.avgUtil > 85 ? 'text-danger' : 'text-primary'} />
         <Kpi icon={<AlertTriangle size={15} />} label="队列深度" value={fmt(kpi.queueDepth)} unit="任务" hint="全局排队任务数（含 P0 挤压）" tone={kpi.queueDepth > 20 ? 'text-warning' : 'text-text-primary'} />
-        <Kpi icon={<Cpu size={15} />} label="缓存命中率" value={`${kpi.avgCache}`} unit="%" hint="Token 级命中率（8.1）" tone="text-success" />
+        <Kpi icon={<Cpu size={15} />} label="缓存命中率" value={`${kpi.avgCache}`} unit="%" hint="Token 级命中率" tone="text-success" />
         <Kpi icon={<Layers size={15} />} label="本地 / 租赁" value={`${kpi.local} / ${kpi.rental}`} unit="节点" hint="costTag 分组：LOCAL/RENTAL" tone="text-text-primary" />
       </div>
 

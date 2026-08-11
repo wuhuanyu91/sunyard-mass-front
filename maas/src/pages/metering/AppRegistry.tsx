@@ -115,7 +115,7 @@ export default function AppRegistry() {
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-[11px] text-text-secondary/70">口径：应用是路由策略、限流规则、配额与计量的挂载对象；停用后网关不再分发流量，历史账单保留。与 IAM 统一身份对接。</p>
+      <p className="mt-2 text-[11px] text-text-secondary/70">应用是路由策略、限流规则、配额与计量的挂载对象；停用后网关不再分发流量，历史账单保留。与 IAM 统一身份对接。</p>
 
       {dialog && <AppDialog initial={dialog.data} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); reload(); }} />}
 

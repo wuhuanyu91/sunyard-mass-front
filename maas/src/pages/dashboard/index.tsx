@@ -179,11 +179,11 @@ export default function Dashboard() {
     delta?: number;
     tone?: 'default' | 'danger' | 'success';
   }[] = [
-    { label: '全行请求量', value: fmtWan(kpi.totalRequests), unit: '次/日', hint: '口径：成功+失败+重试请求总次数（近 24h）', delta: 12.4 },
-    { label: '输入 Token', value: fmtWan(kpi.inputTokens), unit: 'Tokens', hint: '口径：近 24h 输入 Token 总量', delta: 8.1 },
-    { label: '输出 Token', value: fmtWan(kpi.outputTokens), unit: 'Tokens', hint: '口径：近 24h 输出 Token 总量', delta: 5.7 },
-    { label: 'GPU 利用率', value: `${kpi.gpuUtil}`, unit: '%', hint: '口径：计算时间利用率（非显存占用）', delta: 3.2, tone: kpi.gpuUtil > 85 ? 'danger' : 'default' },
-    { label: '今日预估 TCO', value: fmtYuan(kpi.tco), hint: '口径：四类成本之和，含/不含失败重试见计量页开关', delta: 6.9 },
+    { label: '全行请求量', value: fmtWan(kpi.totalRequests), unit: '次/日', hint: '成功+失败+重试请求总次数（近 24h）', delta: 12.4 },
+    { label: '输入 Token', value: fmtWan(kpi.inputTokens), unit: 'Tokens', hint: '近 24h 输入 Token 总量', delta: 8.1 },
+    { label: '输出 Token', value: fmtWan(kpi.outputTokens), unit: 'Tokens', hint: '近 24h 输出 Token 总量', delta: 5.7 },
+    { label: 'GPU 利用率', value: `${kpi.gpuUtil}`, unit: '%', hint: '计算时间利用率（非显存占用）', delta: 3.2, tone: kpi.gpuUtil > 85 ? 'danger' : 'default' },
+    { label: '今日预估 TCO', value: fmtYuan(kpi.tco), hint: '四类成本之和，含/不含失败重试见计量页开关', delta: 6.9 },
     { label: '今日异常', value: `${kpi.abnormal}`, hint: `含 ${kpi.degraded} 次降级 / ${kpi.blocked} 次阻断 / ${kpi.circuitOpen} 次熔断`, delta: -4.2, tone: kpi.abnormal > 0 ? 'danger' : 'success' },
   ];
 
@@ -206,7 +206,7 @@ export default function Dashboard() {
     } else if (card.label === '全行请求量') {
       for (const r of rankApps.slice(0, 5)) rows.push([r.name, `${fmtWan(r.tokens)} Tokens`]);
     } else {
-      rows.push(['口径说明', card.hint]);
+      rows.push(['数据说明', card.hint]);
       rows.push(['当前值', `${card.value}${card.unit ?? ''}`]);
     }
     setKpiDetail({ title: `${card.label} · 构成明细`, rows });
@@ -230,8 +230,8 @@ export default function Dashboard() {
       `  输入/输出 Token：${(s.inputTokens / 100_000_000).toFixed(2)} 亿 / ${(s.outputTokens / 100_000_000).toFixed(2)} 亿，缓存命中率 ${s.cacheHitRate}%`,
       `  GPU 利用率：${s.gpuUtil}%（纳管 ${s.nodes} 节点 / ${s.pools} 资源池）`,
       '二、成本与收益',
-      `  今日预估 TCO：¥${s.tco.toLocaleString()}（四类成本分摊口径）`,
-      '  本月语义路由节省：¥274 万（-42.7%，对比全量旗舰模型口径）',
+      `  今日预估 TCO：¥${s.tco.toLocaleString()}（按四类成本分摊）`,
+      '  本月语义路由节省：¥274 万（-42.7%，对比全量旗舰模型）',
       '三、风险与安全',
       `  今日异常 ${s.abnormal} 起（降级 ${s.degraded} / 阻断 ${s.blocked} / 熔断 ${s.circuitOpen}），待处置告警 ${s.alertOpen} 条`,
       `  安全事件 ${s.securityEvents} 起（脱敏 ${s.maskedEvents} / 严重 ${s.criticalEvents}）`,
@@ -241,7 +241,7 @@ export default function Dashboard() {
       '五、灰度进展',
       '  Fin-Qwen-14B-SFT v3.2：A/B 对照阶段（20% 流量）；Fin-Qwen-14B-INT4 v1.0：5% 切流中',
       '====================================',
-      '口径说明：管理驾驶舱与运维大盘共用同一套底层数据（规范 8.1）；本简报由平台自动生成。',
+      '数据说明：管理驾驶舱与运维大盘共用同一套底层数据；本简报由平台自动生成。',
     ];
     const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);

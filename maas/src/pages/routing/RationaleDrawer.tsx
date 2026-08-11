@@ -172,7 +172,7 @@ export default function RationaleDrawer({ log, onClose }: { log: RouterLog | nul
         {/* 路由决策：四维评分 */}
         <section>
           <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-text-secondary">
-            <Gauge size={13} /> 四维评分（口径 8.2）
+            <Gauge size={13} /> 四维评分
           </div>
           <div className="grid grid-cols-4 gap-2">
             {scoreDim.map((d) => (
@@ -265,7 +265,7 @@ export default function RationaleDrawer({ log, onClose }: { log: RouterLog | nul
               </div>
             ))}
           </div>
-          <p className="mt-2 text-[10px] text-text-secondary/70">口径：策略执行记录与路由决策同源留痕，可在策略治理按策略反查全部命中请求。</p>
+          <p className="mt-2 text-[10px] text-text-secondary/70">策略执行记录与路由决策同源留痕，可在策略治理按策略反查全部命中请求。</p>
         </section>
       </div>
     </Drawer>

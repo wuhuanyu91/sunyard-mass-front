@@ -551,7 +551,7 @@ function PolicyWizard({ apps, assets, policies, onClose, onCreated }: { apps: Ap
             );
           })()}
           <div className="rounded border border-border-default bg-panel-soft p-3">
-            <div className="mb-1.5 text-xs font-medium text-text-secondary">影响面预估（规范 6.2.5）</div>
+            <div className="mb-1.5 text-xs font-medium text-text-secondary">影响面预估</div>
             <div className="grid grid-cols-2 gap-2 text-xs text-text-secondary">
               <p>类型：<b className="text-text-primary">{POLICY_TYPE_LABEL[type]}</b></p>
               <p>作用域：<b className="text-text-primary">{scopeType}:{scopeValue || '—'}</b></p>

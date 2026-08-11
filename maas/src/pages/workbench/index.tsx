@@ -204,7 +204,7 @@ export default function Workbench() {
                   <Area type="monotone" dataKey="tokens" name="用量" stroke="#2563eb" strokeWidth={2} fill="url(#wbTrend)" />
                 </AreaChart>
               </ResponsiveContainer>
-              <p className="pt-1 text-[11px] text-text-secondary/70">口径：按自然日汇总本人调用 Token，周末回落为正常办公节律；费用按模型单价折算。</p>
+              <p className="pt-1 text-[11px] text-text-secondary/70">按自然日汇总本人调用 Token，周末回落为正常办公节律；费用按模型单价折算。</p>
             </Panel>
 
             {/* 与我相关的公告 */}
@@ -258,7 +258,7 @@ export default function Workbench() {
                     <div className="mt-1"><ProgressBar pct={t.pct} tone={t.tag === '业务办公' ? 'success' : t.tag === '开发调试' ? 'primary' : 'danger'} /></div>
                   </div>
                 ))}
-                <p className="pt-1 text-[11px] text-text-secondary/70">口径：行为分析引擎基于调用内容抽样分类，结果用于部门用量审计，个人可自查；如有异议可向部门管理员申诉。</p>
+                <p className="pt-1 text-[11px] text-text-secondary/70">行为分析引擎基于调用内容抽样分类，结果用于部门用量审计，个人可自查；如有异议可向部门管理员申诉。</p>
               </div>
             </Panel>
           </div>

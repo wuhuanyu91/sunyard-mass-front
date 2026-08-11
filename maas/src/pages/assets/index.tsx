@@ -282,7 +282,7 @@ function AssetsOverview({ onOpenGray }: { onOpenGray: () => void }) {
                   <Info k="回滚阈值" v="成功率 < 97% 或 P95 > 1200ms 自动回滚" />
                   <Info k="策略版本" v="v1（灰度中，修改将写入控制面并走审批）" />
                 </div>
-                <p className="mt-1.5 text-xs text-text-secondary">灰度参数修改 = 修改模型策略（规范 6.6.5：保存时提示该变更将写入策略治理模型策略并走审批）</p>
+                <p className="mt-1.5 text-xs text-text-secondary">灰度参数修改 = 修改模型策略（保存时提示该变更将写入策略治理模型策略并走审批）</p>
                 <button
                   onClick={() => {
                     setSelected(null);

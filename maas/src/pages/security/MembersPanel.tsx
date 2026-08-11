@@ -111,7 +111,7 @@ export default function MembersPanel() {
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-[11px] text-text-secondary/70">口径：角色决定页面可见范围与写操作权限（对接行内统一身份 IAM）；禁用即时收回全部权限并留痕，上方租户权限矩阵为角色能力说明。</p>
+      <p className="mt-2 text-[11px] text-text-secondary/70">角色决定页面可见范围与写操作权限（对接行内统一身份 IAM）；禁用即时收回全部权限并留痕，上方租户权限矩阵为角色能力说明。</p>
 
       {dialog && <MemberDialog initial={dialog.data} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); reload(); }} />}
 

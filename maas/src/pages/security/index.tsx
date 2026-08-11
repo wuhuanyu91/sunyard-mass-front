@@ -342,7 +342,7 @@ function SecurityOverview() {
               ))}
             </div>
             <p className="text-xs text-text-secondary">
-              异常 Trace 快捷检索（含锚定阻断 TR-20260803-888002）；时间线与 6.3 共用阶段口径
+              异常 Trace 快捷检索（含锚定阻断 TR-20260803-888002）
             </p>
           </div>
         </Panel>
@@ -516,7 +516,7 @@ function SecurityOverview() {
                 脱敏说明：MASKED/HASH_ONLY 事件原文不导出，仅导出摘要与哈希；userId 按租户隔离脱敏。
               </p>
               <p className="rounded border border-border-default bg-panel-soft px-2 py-1.5">
-                签名校验：导出包内附 manifest.sha256（对所有导出行签名），导入方可校验防篡改（规范 6.7.6）。
+                签名校验：导出包内附 manifest.sha256（对所有导出行签名），导入方可校验防篡改。
               </p>
             </div>
             <div className="mt-4 flex justify-end gap-2">

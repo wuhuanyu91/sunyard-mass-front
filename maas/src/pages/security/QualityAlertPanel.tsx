@@ -91,7 +91,7 @@ export default function QualityAlertPanel() {
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-[11px] text-text-secondary/70">口径：告警与安全态势页联动，触发后进入风险告警列表并推送对应渠道；与成本预警（计量页）共同构成运营双预警。</p>
+      <p className="mt-2 text-[11px] text-text-secondary/70">告警与安全态势页联动，触发后进入风险告警列表并推送对应渠道；与成本预警（计量页）共同构成运营双预警。</p>
 
       {dialog && <RuleDialog initial={dialog.data} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); reload(); }} />}
       </Panel>

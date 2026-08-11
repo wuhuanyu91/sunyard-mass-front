@@ -274,7 +274,7 @@ export default function ModelStats() {
                 提示：该员工「私人娱乐」占比 ≥20%，建议部门负责人关注；可在调用日志中按行为标签检索其明细。
               </p>
             )}
-            <p className="text-xs text-text-secondary">数据来源：调用日志行为分析引擎（P41），审计查看行为已写入留痕。</p>
+            <p className="text-xs text-text-secondary">数据来源：调用日志行为分析引擎，审计查看行为已写入留痕。</p>
           </div>
         )}
       </Drawer>

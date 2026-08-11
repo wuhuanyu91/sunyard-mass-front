@@ -114,7 +114,7 @@ export default function QueuePanel() {
             </div>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-text-secondary/70">队列分层视图（规范 6.4.2）；P0/P1 关键业务优先派发，P2 批量任务错峰至低峰窗口执行。</p>
+        <p className="mt-2 text-[11px] text-text-secondary/70">队列分层视图：P0/P1 关键业务优先派发，P2 批量任务错峰至低峰窗口执行。</p>
       </Panel>
 
       {/* 批量推理任务（P2-15：错峰窗口 + 取消） */}
@@ -181,7 +181,7 @@ export default function QueuePanel() {
             ))}
           </tbody>
         </table>
-        <p className="pt-2 text-[11px] text-text-secondary/70">口径：批量任务在低峰窗口（22:00-06:00）执行，不挤占实时推理；取消后未执行部分不再调度，全程留痕。</p>
+        <p className="pt-2 text-[11px] text-text-secondary/70">批量任务在低峰窗口（22:00-06:00）执行，不挤占实时推理；取消后未执行部分不再调度，全程留痕。</p>
       </Panel>
 
       {/* 新建批量任务 */}

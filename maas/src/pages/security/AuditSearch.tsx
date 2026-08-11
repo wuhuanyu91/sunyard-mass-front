@@ -182,7 +182,7 @@ export default function AuditSearch() {
                 );
               })}
             </div>
-            <p className="text-xs text-text-secondary">链路口径与智能路由白盒一致：鉴权 → 前置护栏 → 路由 → 推理 → 后置护栏 → 响应。</p>
+            <p className="text-xs text-text-secondary">链路阶段与智能路由白盒一致：鉴权 → 前置护栏 → 路由 → 推理 → 后置护栏 → 响应。</p>
           </div>
         )}
       </Drawer>

@@ -103,7 +103,7 @@ export default function TenantPanel() {
           ))}
         </div>
         <p className="mt-3 text-[10px] leading-relaxed text-text-secondary/70">
-          口径：租户映射按宁波银行组织条线锁定（十一章），数据等级 L3 为高敏感（脱敏/留痕要求更高）；停用租户后其 API Key 全部失效、日志按留存策略保留，恢复需重新启用。
+          租户映射按宁波银行组织条线锁定，数据等级 L3 为高敏感（脱敏/留痕要求更高）；停用租户后其 API Key 全部失效、日志按留存策略保留，恢复需重新启用。
         </p>
       </Panel>
     </div>

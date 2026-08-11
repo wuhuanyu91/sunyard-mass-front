@@ -951,7 +951,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
                 '登 录'
               )}
             </button>
-            <p className="text-[11px] leading-relaxed text-[#8a8f99]">演示环境初始密码 000000，登录后请及时修改；登录行为全程审计留痕，连续失败 5 次自动锁定。</p>
+            <p className="text-[11px] leading-relaxed text-[#8a8f99]">初始密码 000000，登录后请及时修改；登录行为全程审计留痕，连续失败 5 次自动锁定。</p>
             <p className="pt-4 text-center text-[11px] leading-relaxed text-[#8a8f99]/70">
               © 2026 信雅达 · 星舰智能 STARSHIP · STARSHIP-MAAS 平台
             </p>

@@ -103,7 +103,7 @@ export function HeteroMatrix() {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[11px] text-text-secondary/70">口径：按厂商×芯片聚合纳管（13.4），调度以模型兼容关系与实测数据为依据，不做无差别互换；国产化资源（昇腾/沐曦）独立适配跟踪。</p>
+      <p className="mt-2 text-[11px] text-text-secondary/70">按厂商×芯片聚合纳管，调度以模型兼容关系与实测数据为依据，不做无差别互换；国产化资源（昇腾/沐曦）独立适配跟踪。</p>
     </Panel>
   );
 }

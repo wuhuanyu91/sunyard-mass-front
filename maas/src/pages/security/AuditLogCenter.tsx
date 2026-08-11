@@ -58,7 +58,7 @@ export default function AuditLogCenter() {
     a.download = `maas-audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    notify.success(`审计日志已导出 ${filtered.length} 条（含 manifest 口径说明）`);
+    notify.success(`审计日志已导出 ${filtered.length} 条（含防篡改签名清单）`);
   };
 
   if (loading) return <div className="panel h-72 animate-pulse" />;
@@ -145,7 +145,7 @@ export default function AuditLogCenter() {
           </div>
         </>
       )}
-      <p className="mt-2 text-[11px] text-text-secondary/70">口径：所有写操作（策略/配额/密钥/护栏/节点/应用/成员）自动落审计日志，含操作人、对象与明细，支持按监管要求导出取证。</p>
+      <p className="mt-2 text-[11px] text-text-secondary/70">所有写操作（策略/配额/密钥/护栏/节点/应用/成员）自动落审计日志，含操作人、对象与明细，支持按监管要求导出取证。</p>
       </Panel>
     </div>
   );
