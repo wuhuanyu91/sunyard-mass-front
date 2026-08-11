@@ -22,7 +22,7 @@ import {
   Snowflake,
   User,
   Lock,
-  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { useApp } from '../store/app';
 import Banner from '../components/ui/Banner';
@@ -832,11 +832,16 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   const [acc, setAcc] = useState('100001');
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
+  const [logging, setLogging] = useState(false);
   const submit = () => {
+    if (logging) return;
     if (!acc.trim()) { setErr('请输入账号'); return; }
     if (!pw) { setErr('请输入密码'); return; }
     if (pw !== '000000') { setErr('密码错误，初始密码为 000000'); return; }
-    onLogin();
+    setErr('');
+    setLogging(true);
+    /* 演示态：模拟身份认证耗时，登录后进入平台 */
+    window.setTimeout(() => onLogin(), 700);
   };
   return (
     <div className="flex min-h-screen bg-[#f4f6f9]">
@@ -854,33 +859,38 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
           </div>
         </div>
         <div className="relative z-10">
-          <div className="text-[39px] font-bold leading-[1.2] text-white">AI普惠 - 知识无界</div>
+          <div className="text-[39px] font-bold leading-[1.2] text-white">智算中枢 · 随需调度</div>
           <div aria-hidden className="mt-5 h-px w-14 bg-white/40" />
-          <div className="mt-4 text-sm font-light leading-relaxed tracking-wide text-white/80">Make AI more inclusive and knowledge more unbounded</div>
+          <div className="mt-4 text-sm font-light leading-relaxed tracking-wide text-white/80">Unified model governance · Intelligent routing · Compute on demand</div>
           <div className="mt-10 flex flex-wrap gap-3.5">
             {[
-              ['智能网关', '多约束语义路由 · 模型统一纳管'],
-              ['弹性算力', 'GPU/NPU 异构池 · 秒级弹性伸缩'],
-              ['国产化纳管', '昇腾 / 沐曦适配 · 自主可控'],
-            ].map(([t, d]) => (
-              <div key={t} className="w-44 rounded-lg border border-white/25 bg-white/15 px-4 py-3 backdrop-blur-sm">
+              ['智能网关', '多约束语义路由', '模型统一纳管'],
+              ['弹性算力', 'GPU/NPU 异构池', '秒级弹性伸缩'],
+              ['国产化纳管', '昇腾 / 沐曦适配', '自主可控'],
+            ].map(([t, d1, d2]) => (
+              <div key={t} className="w-44 rounded-lg border border-white/25 bg-white/15 px-4 py-3 backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 hover:border-white/45 hover:bg-white/22 hover:shadow-[0_10px_28px_-10px_rgba(0,0,0,0.4)]">
                 <div className="flex items-center gap-1.5 text-sm font-semibold text-white">
                   <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-white/80" />
                   {t}
                 </div>
-                <div className="mt-1.5 pl-3 text-[11px] leading-snug text-white/75">{d}</div>
+                <div className="mt-1.5 pl-3 text-[11px] leading-relaxed text-white/75">
+                  <div>{d1}</div>
+                  <div>{d2}</div>
+                </div>
               </div>
             ))}
           </div>
         </div>
-        <div className="relative z-10 flex items-center gap-6">
+        <div className="relative z-10 flex items-center gap-4">
+          {/* 信雅达：白底框 */}
           <div className="flex items-center gap-2 rounded-md bg-white px-3 py-2">
             <span className="flex h-5 w-5 items-center justify-center rounded bg-[#1e3fd9] text-[9px] font-bold text-white">信</span>
             <span className="text-xs font-semibold leading-none text-[#333]">信雅达® SUNYARD</span>
           </div>
-          <div className="flex items-center gap-2 text-white">
-            <Sparkles size={16} className="shrink-0 text-white/90" />
-            <span className="text-xs font-semibold leading-none">星舰智能 STARSHIP-MAAS</span>
+          {/* 星舰智能：深色半透明底框（区别于信雅达白底） */}
+          <div className="flex items-center gap-2 rounded-md border border-white/30 bg-slate-900/35 px-3 py-2 backdrop-blur-sm">
+            <span className="flex h-5 w-5 items-center justify-center rounded bg-gradient-to-br from-indigo-400 to-blue-500 text-[9px] font-bold text-white">星</span>
+            <span className="text-xs font-semibold leading-none text-white">星舰智能 STARSHIP</span>
           </div>
         </div>
       </div>
@@ -888,7 +898,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="w-full max-w-[380px]">
           <div className="mb-9">
-            <div className="text-[27px] font-bold leading-tight text-[#333]">Make AI Happen</div>
+            <div className="text-[27px] font-bold leading-tight text-[#333]">Model as a Service</div>
             <div className="mt-2 text-sm leading-relaxed text-[#8a8f99]">登录星舰智能平台，开启 AI 生产运营</div>
           </div>
           <div className="space-y-4">
@@ -929,12 +939,22 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
             {err && <p className="text-xs leading-relaxed text-[#dc2626]">{err}</p>}
             <button
               onClick={submit}
-              className="h-12 w-full rounded-md text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98]"
+              disabled={logging}
+              className="h-12 w-full rounded-md text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70"
               style={{ backgroundImage: 'linear-gradient(135deg, #B29DF7 0%, #2563E9 100%)', boxShadow: '0 4px 14px -4px rgba(37, 99, 233, 0.45)' }}
             >
-              登 录
+              {logging ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Loader2 size={15} className="animate-spin" /> 登录中…
+                </span>
+              ) : (
+                '登 录'
+              )}
             </button>
             <p className="text-[11px] leading-relaxed text-[#8a8f99]">演示环境初始密码 000000，登录后请及时修改；登录行为全程审计留痕，连续失败 5 次自动锁定。</p>
+            <p className="pt-4 text-center text-[11px] leading-relaxed text-[#8a8f99]/70">
+              © 2026 信雅达 · 星舰智能 STARSHIP · STARSHIP-MAAS 平台
+            </p>
           </div>
         </div>
       </div>

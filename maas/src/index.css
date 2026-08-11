@@ -565,6 +565,19 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb {
     radial-gradient(380px 260px at 10% 82%, rgba(160, 190, 255, 0.14), transparent 60%),
     linear-gradient(140deg, #4338ca 0%, #2f3fcf 42%, #1e40af 100%);
 }
+/* 背景缓慢流动光斑（强化“智算中枢”科技氛围，尊重 reduced-motion） */
+.login-hero::after {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background: radial-gradient(320px 220px at 30% 40%, rgba(129, 140, 248, 0.2), transparent 62%);
+  animation: login-orb-drift 16s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes login-orb-drift {
+  from { transform: translate(-6%, -4%); }
+  to { transform: translate(6%, 4%); }
+}
 .login-ai-bg {
   position: absolute;
   right: -1rem;
