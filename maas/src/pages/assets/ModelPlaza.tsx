@@ -83,7 +83,7 @@ export default function ModelPlaza() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="mock-data flex flex-col gap-3">
       <PageHeader crumb="模型资产" title="模型广场" desc="平台模型发现与接入申请，申请审批通过后自动分配 API Key 并计入部门配额" />
       {/* 工具条 */}
       <div className="flex flex-wrap items-center gap-2">

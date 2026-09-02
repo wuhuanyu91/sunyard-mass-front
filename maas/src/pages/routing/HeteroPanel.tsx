@@ -44,6 +44,7 @@ export function HeteroMatrix() {
   const totalCount = vendors.reduce((s, v) => s + v.count, 0);
 
   return (
+    <div className="mock-data">
     <Panel
       title={
         <span className="flex items-center gap-1.5">
@@ -105,6 +106,7 @@ export function HeteroMatrix() {
       </div>
       <p className="mt-2 text-[11px] text-text-secondary/70">按厂商×芯片聚合纳管，调度以模型兼容关系与实测数据为依据，不做无差别互换；国产化资源（昇腾/沐曦）独立适配跟踪。</p>
     </Panel>
+    </div>
   );
 }
 
@@ -137,6 +139,7 @@ export function HeteroSchedPanel() {
   };
 
   return (
+    <div className="mock-data">
     <Panel
       title="异构调度策略（厂商级）"
       extra={
@@ -172,6 +175,7 @@ export function HeteroSchedPanel() {
       </div>
       {dirty && <p className="mt-2 text-[11px] text-warning">有未下发的策略修改 —— 保存后分钟级生效，并写入审计日志</p>}
     </Panel>
+    </div>
   );
 }
 

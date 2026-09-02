@@ -131,6 +131,7 @@ export default function AuditSearch() {
       </Panel>
 
       {/* 租户数据留存（P40） */}
+      <div className="mock-data">
       <Panel title="租户数据与日志留存（独立留存）">
         <div className="grid grid-cols-3 gap-3">
           {retentions.map((t) => (
@@ -151,6 +152,7 @@ export default function AuditSearch() {
           ))}
         </div>
       </Panel>
+      </div>
 
       {/* 链路时间线 Drawer */}
       <Drawer open={!!selected} onClose={() => setSelected(null)} title={`全链路时间线 · ${selected?.traceId ?? ''}`} width={520}>

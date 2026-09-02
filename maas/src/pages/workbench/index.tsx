@@ -186,8 +186,9 @@ export default function Workbench() {
             ]}
           />
 
-          <div className="grid grid-cols-12 gap-3">
+          <div className="mock-data grid grid-cols-12 gap-3">
             {/* 我的用量趋势（近 14 天） */}
+            <div className="mock-data">
             <Panel title="我的用量趋势（近 14 天）" className="col-span-7" extra={<span className="num text-xs text-text-secondary">累计 {(trendSum.tokens / 10000).toFixed(0)} 万 Tokens · ¥{trendSum.cost.toLocaleString()}</span>}>
               <ResponsiveContainer width="100%" height={185}>
                 <AreaChart data={trend} margin={{ top: 6, right: 8, bottom: 0, left: -12 }}>
@@ -206,8 +207,10 @@ export default function Workbench() {
               </ResponsiveContainer>
               <p className="pt-1 text-[11px] text-text-secondary/70">按自然日汇总本人调用 Token，周末回落为正常办公节律；费用按模型单价折算。</p>
             </Panel>
+            </div>
 
             {/* 与我相关的公告 */}
+            <div className="mock-data">
             <Panel title="平台公告" className="col-span-5" extra={<span className="num text-xs text-text-secondary">{anns.length} 条</span>}>
               <div className="space-y-2">
                 {anns.slice(0, 3).map((a) => (
@@ -222,10 +225,10 @@ export default function Workbench() {
                 ))}
               </div>
             </Panel>
+            </div>
           </div>
 
           <div className="grid grid-cols-12 gap-3">
-            {/* 部门配额余量 */}
             <Panel title="本部门配额余量（月度）" className="col-span-5">
               {myDeptQuota ? (
                 <div className="space-y-3">
@@ -264,6 +267,7 @@ export default function Workbench() {
           </div>
 
           {/* 成本优化建议（平台级模型替换建议，业务员可反馈采纳意向） */}
+          <div className="mock-data">
           <Panel title="成本优化建议（与我部门相关场景）" extra={<span className="text-xs text-text-secondary">基于调用量 / 成本 / 效果分析</span>}>
             <div className="space-y-2">
               {recommends.slice(0, 3).map((r) => (
@@ -280,6 +284,7 @@ export default function Workbench() {
               ))}
             </div>
           </Panel>
+          </div>
 
           {/* 本部门 Key 视图（脱敏） */}
           <Panel title="本部门 API Key（个人视图仅可见脱敏信息）">
@@ -309,6 +314,7 @@ export default function Workbench() {
         </>
       ) : (
         /* ---------- 我的申请（申请人进度中心） ---------- */
+        <div className="mock-data">
         <Panel title="我的申请（统一进度跟踪）" extra={<span className="num text-xs text-text-secondary">{applies.length} 条 · 待审批 {applies.filter((a) => a.status === 'PENDING').length}</span>}>
           <div className="space-y-2.5">
             {applies.map((a) => (
@@ -358,6 +364,7 @@ export default function Workbench() {
           </div>
           <p className="mt-3 text-[11px] text-text-secondary/70">提示：模型接入申请在「模型资产 → 模型广场」发起；配额相关申请在「计量运营 → 配额管理」发起，均自动汇总至此。</p>
         </Panel>
+        </div>
       )}
     </div>
   );

@@ -33,7 +33,7 @@ export default function QualityAlertPanel() {
   if (loading) return <div className="panel h-52 animate-pulse" />;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="mock-data flex flex-col gap-3">
       <PageHeader crumb="安全审计" title="告警规则" desc="调用质量告警规则配置，触发后联动安全态势风险队列与通知渠道" />
       <Panel
       title={

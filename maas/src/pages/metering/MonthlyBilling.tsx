@@ -45,7 +45,7 @@ export default function MonthlyBilling() {
   if (loading) return <div className="panel h-72 animate-pulse" />;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="mock-data flex flex-col gap-3">
       <PageHeader
         crumb="计量运营"
         title="月度账单"

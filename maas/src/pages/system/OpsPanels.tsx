@@ -43,7 +43,7 @@ export function MonitorPanel() {
   if (loading) return <div className="panel h-72 animate-pulse" />;
 
   return (
-    <>
+    <div className="mock-data">
       <PageHeader
         crumb="系统管理"
         title="平台监控"
@@ -120,7 +120,7 @@ export function MonitorPanel() {
         })}
       </div>
       <p className="text-[11px] text-text-secondary/70">服务健康 {healthy}/{svcs.length}，副本就绪 {readyReplicas}/{totalReplicas}；拨测由行内监控平台代理执行，本视图只读聚合，处置入口在运维值班流程。</p>
-    </>
+    </div>
   );
 }
 
@@ -186,7 +186,7 @@ export function TicketPanel() {
   if (loading) return <div className="panel h-72 animate-pulse" />;
 
   return (
-    <>
+    <div className="mock-data">
       <PageHeader
         crumb="系统管理"
         title="工单反馈"
@@ -298,7 +298,7 @@ export function TicketPanel() {
           {formErr && <p className="text-xs text-danger">{formErr}</p>}
         </div>
       </Modal>
-    </>
+    </div>
   );
 }
 
@@ -335,7 +335,7 @@ export function ParamsPanel() {
   if (!p) return <div className="panel h-72 animate-pulse" />;
 
   return (
-    <>
+    <div className="mock-data">
       <PageHeader
         crumb="系统管理"
         title="系统参数"
@@ -473,6 +473,6 @@ export function ParamsPanel() {
         </div>
         <p className="pt-3 text-[11px] text-text-secondary/70">参数变更即时生效并写操作日志；审计留存低于 180 天将被拦截，保障监管检查可回溯。</p>
       </Panel>
-    </>
+    </div>
   );
 }

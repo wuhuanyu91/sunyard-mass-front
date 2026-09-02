@@ -75,7 +75,7 @@ export default function EmergencyConsole() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="mock-data flex flex-col gap-3">
       <PageHeader crumb="调度算力" title="应急操作" desc="灰度降级/流量切备/关停非核心三类应急操作，执行均生成工单并支持一键回滚" />
       <div className="grid grid-cols-3 gap-3">
         {/* -------- 灰度降级 -------- */}

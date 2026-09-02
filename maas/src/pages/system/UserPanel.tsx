@@ -92,7 +92,7 @@ export default function UserPanel() {
   if (loading) return <div className="panel h-72 animate-pulse" />;
 
   return (
-    <>
+    <div className="mock-data">
       <PageHeader
         crumb="系统管理"
         title="用户管理"
@@ -256,6 +256,6 @@ export default function UserPanel() {
           setDeleteTarget(null);
         }}
       />
-    </>
+    </div>
   );
 }

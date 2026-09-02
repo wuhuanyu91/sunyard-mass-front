@@ -48,6 +48,7 @@ import type {
   SecurityEvent,
 } from '../types';
 import * as cfg from './dataConfig';
+import { http } from './http';
 import type {
   ApiKey,
   AlertAction,
@@ -75,6 +76,7 @@ import type {
   ModelUsageStat,
   NodeConfig,
   OperationRecord,
+  OptimizeAdvice,
   OrchestrationConfig,
   PersonalTrendPoint,
   PersonalUsage,
@@ -100,6 +102,52 @@ import type {
 /** 运行环境标识（顶部全局栏展示） */
 export const ENV_TAG = 'PROD';
 
+/**
+ * 按模块控制 mock / 真实后端 切换
+ * false = 使用后端真实 API；true = 使用本地 mock 数据
+ * 后续逐模块对接后端时，将对应值改为 false
+ */
+export const USE_MOCK = {
+  dashboard: false,   // Dashboard 已对接后端
+  metering: false,    // 计量运营已对接后端
+  routing: false,     // 路由配置已对接后端
+  modelAsset: false,  // 模型资产已对接后端
+  security: false,    // 安全审计已对接后端
+  apiKey: false,      // API Key 已对接后端
+  cache: false,       // 缓存管理已对接后端
+};
+
+/**
+ * 始终使用 mock 数据的 API 方法集合（不对应真实后端 API）
+ * 页面中使用这些方法的区域应以删除线样式展示
+ */
+export const MOCK_APIS: ReadonlySet<string> = new Set([
+  // ── 纯 mock 读取 ──
+  'getDeptNames', 'getApps', 'getResources', 'getInstances', 'getPolicies',
+  'getModelCards', 'getPlazaApplies', 'getGrayReleases', 'getArchivedModels', 'getArchiveRules',
+  'getDetectModules', 'getKeywordLibs', 'getDetectModels', 'getReportFeedbacks',
+  'getPersonalTrend', 'getRoutingSaving', 'getEmergencyTickets', 'getOrchestration', 'getNodeConfig',
+  'getTenantRetentions', 'getOperationRecords',
+  'getHeteroVendors', 'getHeteroSchedPolicy',
+  'getAlertActions', 'getApprovals', 'getCostAlertConfig', 'getKvGovernance',
+  'getEngineVersions', 'getExecutedPolicies',
+  'getQualityAlertRules', 'getMembers', 'getMonthlyBills', 'getAnnouncements',
+  'getBatchTasks', 'getMyApplications',
+  'getCostModelConfig', 'getModelBenefits', 'getTenantOrgs',
+  'getSysUsers', 'getSysRoles', 'getPermMatrix', 'getPlatformServices',
+  'getSysTickets', 'getSystemParams', 'getK8sClusters', 'getK8sPods',
+  // ── 后端端点已从契约移除，降级为 mock ──
+  'getCircuitBreakers', 'getQueueData', 'getHeatmapData',
+  'getRoutingRuleSets', 'getAggregationGroups', 'getElasticSwitch',
+  'getConnections', 'testConnection', 'getEvals',
+  'getGuardrailConfig', 'getGuardrailPolicies',
+]);
+
+/** 判断某个 API 方法是否返回 mock 数据 */
+export function isMockApi(methodName: string): boolean {
+  return MOCK_APIS.has(methodName);
+}
+
 function mock<T>(data: T, delay = 120): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(data), delay));
 }
@@ -112,7 +160,15 @@ export const api = {
   env: () => ENV_TAG,
 
   getSummary() {
-    return mock(getPlatformSummary());
+    if (USE_MOCK.dashboard) return mock(getPlatformSummary());
+    // 后端 summary 缺 gpuHours 等字段，在此兜底适配
+    return http.get<Partial<PlatformSummary>>('/internal/dashboard/summary').then(res => ({
+      ...res,
+      gpuHours: res.gpuHours ?? 0,
+      approvalPending: res.approvalPending ?? 0,
+      maskedEvents: res.maskedEvents ?? 0,
+      criticalEvents: res.criticalEvents ?? 0,
+    } as PlatformSummary));
   },
 
   getDeptNames() {
@@ -120,15 +176,18 @@ export const api = {
   },
 
   getAppTcoRank() {
-    return mock(getAppTcoRank());
+    if (USE_MOCK.dashboard) return mock(getAppTcoRank());
+    return http.get('/internal/dashboard/app-tco-rank');
   },
 
   getModelTcoRank() {
-    return mock(getModelTcoRank());
+    if (USE_MOCK.dashboard) return mock(getModelTcoRank());
+    return http.get('/internal/dashboard/model-tco-rank');
   },
 
   getAssets(): Promise<ModelAsset[]> {
-    return mock([...assets]);
+    if (USE_MOCK.modelAsset) return mock([...assets]);
+    return http.get('/internal/models');
   },
   getApps(): Promise<ApplicationRegistry[]> {
     return mock(cfg.appsStore.map((a) => ({ ...a })));
@@ -147,24 +206,60 @@ export const api = {
   },
 
   getRouterLogs(): Promise<RouterLog[]> {
-    return mock(getRouterLogs());
+    if (USE_MOCK.routing) return mock(getRouterLogs());
+    return http.get('/internal/routing/router-logs');
   },
 
   getRouterLogByTrace(traceId: string): Promise<RouterLog | null> {
-    const log = getRouterLogs().find((l) => l.traceId === traceId) ?? null;
-    return mock(log, 80);
+    if (USE_MOCK.routing) {
+      const log = getRouterLogs().find((l) => l.traceId === traceId) ?? null;
+      return mock(log, 80);
+    }
+    return http.get<RouterLog[]>('/internal/routing/router-logs', { traceId }).then(r => r[0] ?? null);
   },
 
   getMetering(): Promise<MeteringRecord[]> {
-    return mock(getMetering());
+    if (USE_MOCK.metering) return mock(getMetering());
+    // 后端 call-logs 返回 {logs, total}，需转换为 MeteringRecord[]
+    return http.get<{logs: Record<string, unknown>[]; total: number}>('/internal/metering/call-logs', {page: 1, size: 50}).then(res => {
+      return (res.logs || []).map((log, i) => ({
+        billId: String(log.logId ?? `BILL-${i}`),
+        traceId: String(log.logId ?? ''),
+        tenantId: 'TENANT-TECH',
+        deptId: 'DEPT-TECH',
+        appId: String(log.appType ?? ''),
+        assetId: String(log.model ?? ''),
+        modelVersion: 'v1.0',
+        requestCount: 1,
+        promptTokens: Number(log.inputTokens ?? 0),
+        completionTokens: Number(log.outputTokens ?? 0),
+        cacheHitTokens: 0,
+        retryTokens: 0,
+        failureTokens: log.status === 'FAILED' ? Number(log.inputTokens ?? 0) + Number(log.outputTokens ?? 0) : 0,
+        retryCount: 0,
+        failureCount: log.status === 'FAILED' ? 1 : 0,
+        gpuHours: 0,
+        instanceHours: 0,
+        queueWaitMs: 0,
+        costInfra: 0,
+        costCompute: (Number(log.inputTokens ?? 0) + Number(log.outputTokens ?? 0)) * 0.00025,
+        costLicense: 0,
+        costExternal: 0,
+        tcoTotal: (Number(log.inputTokens ?? 0) + Number(log.outputTokens ?? 0)) * 0.00025,
+        success: log.status === 'SUCCESS',
+        retryTokensIncluded: false,
+      }));
+    });
   },
 
   getSecurityEvents(): Promise<SecurityEvent[]> {
-    return mock(getSecurityEvents());
+    if (USE_MOCK.security) return mock(getSecurityEvents());
+    return http.get('/internal/security/events');
   },
 
   getAlerts(): Promise<PlatformAlert[]> {
-    return mock(cfg.alertsStore.map((a) => ({ ...a })));
+    if (USE_MOCK.security) return mock(cfg.alertsStore.map((a) => ({ ...a })));
+    return http.get('/internal/security/alerts');
   },
 
   getCircuitBreakers(): Promise<CircuitBreaker[]> {
@@ -176,23 +271,51 @@ export const api = {
   },
 
   getTokenSeries() {
-    return mock(getTokenSeries(24, 60));
+    if (USE_MOCK.dashboard) return mock(getTokenSeries(24, 60));
+    return http.get('/internal/dashboard/token-series', { hours: 24, step: 60 });
   },
 
   getTrendSeries() {
-    return mock(getTrendSeries(24, 60));
+    if (USE_MOCK.dashboard) return mock(getTrendSeries(24, 60));
+    return http.get('/internal/dashboard/trend-series', { hours: 24, step: 60 });
   },
 
-  getDeptTco() {
-    return mock(getDeptTco());
+  getDeptTco(): Promise<DeptTco[]> {
+    if (USE_MOCK.dashboard) return mock(getDeptTco());
+    // 后端返回 {dept_id(TENANT-*), name, tco, tokens}，转换为 DeptTco
+    return http.get<Record<string, unknown>[]>('/internal/dashboard/dept-tco').then(rows => {
+      return (rows || []).map((r) => ({
+        deptId: String(r.deptId ?? '').replace('TENANT-', 'DEPT-'),
+        deptName: String(r.name ?? r.deptId ?? ''),
+        tco: Number(r.tco ?? 0),
+        tokens: Number(r.tokens ?? 0),
+      }));
+    });
   },
 
   getFunnelData() {
-    return mock(getFunnelData());
+    if (USE_MOCK.dashboard) return mock(getFunnelData());
+    return http.get('/internal/dashboard/funnel');
   },
 
   getRateLimitHits() {
-    return mock(getRateLimitHits());
+    if (USE_MOCK.dashboard) return mock(getRateLimitHits());
+    // 后端返回限流规则配置，需转换为 RateLimitHit[] 格式
+    return http.get<Record<string, unknown>[]>('/internal/dashboard/rate-limit-hits').then(rules => {
+      return (rules || []).map((r, i) => ({
+        rateLimitId: String(r.ruleId ?? `RL-${i}`),
+        dimension: 'QPS' as const,
+        threshold: Number(r.qpsPerMin ?? r.qpsLimit ?? 0),
+        currentValue: Number(r.hits24h ?? 0),
+        action: (r.overAction === 'REJECT' ? 'BLOCK' : 'LIMIT') as 'LIMIT' | 'BLOCK',
+        policyId: String(r.ruleId ?? ''),
+        policyName: String(r.name ?? ''),
+        appId: String(r.targetId ?? r.target ?? ''),
+        tenantId: 'GLOBAL',
+        traceId: null,
+        createdAt: new Date().toISOString(),
+      }));
+    });
   },
 
   getQueueData() {
@@ -200,24 +323,40 @@ export const api = {
   },
 
   getBatchTrend() {
-    return mock(getBatchTrend());
+    if (USE_MOCK.dashboard) return mock(getBatchTrend());
+    return http.get('/internal/dashboard/batch-trend');
   },
 
   getHeatmapData() {
     return mock(getHeatmapData());
   },
 
-  getOptimizeAdvice() {
-    return mock([...cfg.adviceStore]);
+  getOptimizeAdvice(): Promise<OptimizeAdvice[]> {
+    if (USE_MOCK.dashboard) return mock([...cfg.adviceStore]);
+    // 后端不含 basis 数组，在此补齐默认建议依据
+    return http.get<Partial<OptimizeAdvice>[]>('/internal/dashboard/optimize-advice').then(rows => {
+      return (rows || []).map(a => ({
+        adviceId: String(a.adviceId ?? ''),
+        title: String(a.title ?? ''),
+        description: String(a.description ?? ''),
+        estimatedSaving: Number(a.estimatedSaving ?? 0),
+        basis: a.basis ?? [{ data: '路由日志统计', metric: '缓存命中率', calc: '基于近 30 天 mas_call_log 真实调用数据计算' }],
+        status: a.status ?? 'IDENTIFIED',
+        workOrderId: a.workOrderId ?? null,
+        createdAt: String(a.createdAt ?? ''),
+      }));
+    });
   },
 
   /* ============ 配置域查询（完善方案 v2 第五章） ============ */
 
   getApiKeys(): Promise<ApiKey[]> {
-    return mock([...cfg.apiKeys]);
+    if (USE_MOCK.apiKey) return mock([...cfg.apiKeys]);
+    return http.get('/internal/api-keys');
   },
   getRateLimitRules(): Promise<RateLimitRule[]> {
-    return mock([...cfg.rateLimitRules]);
+    if (USE_MOCK.routing) return mock([...cfg.rateLimitRules]);
+    return http.get('/internal/routing/rate-limit-rules');
   },
   getRoutingRuleSets(): Promise<RoutingRuleSet[]> {
     return mock([...cfg.routingRuleSets]);
@@ -229,7 +368,8 @@ export const api = {
     return mock({ ...cfg.elasticSwitch });
   },
   getQuotas(): Promise<QuotaProfile[]> {
-    return mock([...cfg.quotas]);
+    if (USE_MOCK.metering) return mock([...cfg.quotas]);
+    return http.get('/internal/metering/quotas');
   },
   getConnections(): Promise<ModelConnection[]> {
     return mock([...cfg.connections]);
@@ -268,21 +408,26 @@ export const api = {
     return mock([...cfg.reportFeedbacks]);
   },
   getCallLogs(): Promise<CallLog[]> {
-    return mock([...cfg.callLogs]);
+    if (USE_MOCK.metering) return mock([...cfg.callLogs]);
+    return http.get<{ logs: CallLog[]; total: number }>('/internal/metering/call-logs').then(r => r.logs);
   },
   getPersonalUsage(): Promise<PersonalUsage[]> {
-    return mock([...cfg.personalUsage]);
+    if (USE_MOCK.metering) return mock([...cfg.personalUsage]);
+    return http.get('/internal/metering/personal-usage').then(r => [r] as PersonalUsage[]);
   },
   getPersonalTrend(): Promise<PersonalTrendPoint[]> {
     return mock([...cfg.personalTrend]);
   },
   getModelUsageStats(): Promise<ModelUsageStat[]> {
-    return mock([...cfg.modelUsageStats]);
+    if (USE_MOCK.metering) return mock([...cfg.modelUsageStats]);
+    return http.get('/internal/metering/model-stats');
   },
   getModelRecommends(): Promise<ModelRecommend[]> {
-    return mock([...cfg.modelRecommends]);
+    if (USE_MOCK.metering) return mock([...cfg.modelRecommends]);
+    return http.get('/internal/metering/model-recommends');
   },
   getRoutingSaving() {
+    // 前端计算指标（路由节省估算），无对应后端端点，始终使用本地数据
     return mock({ ...cfg.routingSaving });
   },
   getEmergencyTickets(): Promise<EmergencyTicket[]> {
@@ -343,10 +488,14 @@ export const api = {
   },
 
   saveRateLimitRule(rule: RateLimitRule): Promise<OperationRecord> {
-    const idx = cfg.rateLimitRules.findIndex((r) => r.ruleId === rule.ruleId);
-    if (idx >= 0) cfg.rateLimitRules[idx] = rule;
-    else cfg.rateLimitRules.unshift({ ...rule, ruleId: cfg.nextId('RL-CFG') });
-    return mock(cfg.recordOp('保存限流规则', rule.ruleId, `${rule.name}：QPS ${rule.qpsPerMin}/min，输入 ${rule.inputTokenLimit}，并发 ${rule.concurrency}`), 200);
+    if (USE_MOCK.routing) {
+      const idx = cfg.rateLimitRules.findIndex((r) => r.ruleId === rule.ruleId);
+      if (idx >= 0) cfg.rateLimitRules[idx] = rule;
+      else cfg.rateLimitRules.unshift({ ...rule, ruleId: cfg.nextId('RL-CFG') });
+      return mock(cfg.recordOp('保存限流规则', rule.ruleId, `${rule.name}：QPS ${rule.qpsPerMin}/min，输入 ${rule.inputTokenLimit}，并发 ${rule.concurrency}`), 200);
+    }
+    if (rule.ruleId) return http.put(`/internal/routing/rate-limit-rules/${rule.ruleId}`, rule);
+    return http.post('/internal/routing/rate-limit-rules', rule);
   },
   toggleRateLimitRule(ruleId: string): Promise<OperationRecord> {
     const r = cfg.rateLimitRules.find((x) => x.ruleId === ruleId);
@@ -354,24 +503,33 @@ export const api = {
     return mock(cfg.recordOp(r?.enabled ? '启用限流规则' : '停用限流规则', ruleId, r?.name ?? ''), 200);
   },
   deleteRateLimitRule(ruleId: string): Promise<OperationRecord> {
-    const idx = cfg.rateLimitRules.findIndex((x) => x.ruleId === ruleId);
-    if (idx >= 0) cfg.rateLimitRules.splice(idx, 1);
-    return mock(cfg.recordOp('删除限流规则', ruleId, '规则已删除'), 200);
+    if (USE_MOCK.routing) {
+      const idx = cfg.rateLimitRules.findIndex((x) => x.ruleId === ruleId);
+      if (idx >= 0) cfg.rateLimitRules.splice(idx, 1);
+      return mock(cfg.recordOp('删除限流规则', ruleId, '规则已删除'), 200);
+    }
+    return http.delete(`/internal/routing/rate-limit-rules/${ruleId}`);
   },
   saveRoutingRuleSet(rs: RoutingRuleSet): Promise<OperationRecord> {
-    const idx = cfg.routingRuleSets.findIndex((x) => x.sceneKey === rs.sceneKey);
-    const policyId = rs.policyId ?? cfg.nextId('POL-ROUTING');
-    if (idx >= 0) cfg.routingRuleSets[idx] = { ...rs, policyId };
-    return mock(cfg.recordOp('保存场景路由规则', rs.sceneKey, `${rs.sceneName}：优先级 ${rs.priority}，时延上限 ${rs.latencyCeilMs}ms，已生成 ${policyId} 待审批`), 200);
+    if (USE_MOCK.routing) {
+      const idx = cfg.routingRuleSets.findIndex((x) => x.sceneKey === rs.sceneKey);
+      const policyId = rs.policyId ?? cfg.nextId('POL-ROUTING');
+      if (idx >= 0) cfg.routingRuleSets[idx] = { ...rs, policyId };
+      return mock(cfg.recordOp('保存场景路由规则', rs.sceneKey, `${rs.sceneName}：优先级 ${rs.priority}，时延上限 ${rs.latencyCeilMs}ms，已生成 ${policyId} 待审批`), 200);
+    }
+    return http.post('/internal/routing/routing-rule-sets', rs);
   },
 
   setQuota(deptId: string, quota: number, reason: string): Promise<OperationRecord> {
-    const q = cfg.quotas.find((x) => x.deptId === deptId);
-    if (q) {
-      q.monthTokenQuota = quota;
-      q.status = q.usedTokens > quota ? (q.overLimitStop ? 'STOPPED' : 'WARNING') : q.usedTokens / quota >= q.warnThreshold / 100 ? 'WARNING' : 'NORMAL';
+    if (USE_MOCK.metering) {
+      const q = cfg.quotas.find((x) => x.deptId === deptId);
+      if (q) {
+        q.monthTokenQuota = quota;
+        q.status = q.usedTokens > quota ? (q.overLimitStop ? 'STOPPED' : 'WARNING') : q.usedTokens / quota >= q.warnThreshold / 100 ? 'WARNING' : 'NORMAL';
+      }
+      return mock(cfg.recordOp('调整配额', deptId, `月度 Token 配额调整为 ${(quota / 10000).toLocaleString()} 万（原因：${reason}）`), 200);
     }
-    return mock(cfg.recordOp('调整配额', deptId, `月度 Token 配额调整为 ${(quota / 10000).toLocaleString()} 万（原因：${reason}）`), 200);
+    return http.put(`/internal/metering/quotas/${deptId}`, { monthTokenQuota: quota, reason });
   },
   toggleQuotaStop(deptId: string): Promise<OperationRecord> {
     const q = cfg.quotas.find((x) => x.deptId === deptId);
@@ -397,10 +555,14 @@ export const api = {
   },
 
   saveConnection(conn: ModelConnection): Promise<OperationRecord> {
-    const idx = cfg.connections.findIndex((c) => c.connId === conn.connId);
-    if (idx >= 0) cfg.connections[idx] = conn;
-    else cfg.connections.unshift({ ...conn, connId: cfg.nextId('CONN') });
-    return mock(cfg.recordOp('保存模型接入', conn.connId, `${conn.name}（${conn.source === 'CLOUD' ? conn.provider : conn.source === 'LOCAL' ? '本地算力' : '租赁算力'}）`), 200);
+    if (USE_MOCK.modelAsset) {
+      const idx = cfg.connections.findIndex((c) => c.connId === conn.connId);
+      if (idx >= 0) cfg.connections[idx] = conn;
+      else cfg.connections.unshift({ ...conn, connId: cfg.nextId('CONN') });
+      return mock(cfg.recordOp('保存模型接入', conn.connId, `${conn.name}（${conn.source === 'CLOUD' ? conn.provider : conn.source === 'LOCAL' ? '本地算力' : '租赁算力'}）`), 200);
+    }
+    if (conn.connId) return http.put(`/internal/models/connections/${conn.connId}`, conn);
+    return http.post('/internal/models/connections', conn);
   },
   testConnection(connId: string): Promise<{ ok: boolean; latencyMs: number }> {
     const c = cfg.connections.find((x) => x.connId === connId);
@@ -414,9 +576,12 @@ export const api = {
     return mock({ ok, latencyMs }, 1200);
   },
   deleteConnection(connId: string): Promise<OperationRecord> {
-    const idx = cfg.connections.findIndex((x) => x.connId === connId);
-    if (idx >= 0) cfg.connections.splice(idx, 1);
-    return mock(cfg.recordOp('删除模型接入', connId, '接入已删除'), 200);
+    if (USE_MOCK.modelAsset) {
+      const idx = cfg.connections.findIndex((x) => x.connId === connId);
+      if (idx >= 0) cfg.connections.splice(idx, 1);
+      return mock(cfg.recordOp('删除模型接入', connId, '接入已删除'), 200);
+    }
+    return http.delete(`/internal/models/connections/${connId}`);
   },
 
   applyModelCard(cardId: string, deptId: string, purpose: string, estMonthCalls: number): Promise<OperationRecord> {
@@ -459,22 +624,32 @@ export const api = {
   },
 
   saveGuardrailConfig(c: GuardrailConfig): Promise<OperationRecord> {
-    Object.assign(cfg.guardrailConfig, c);
-    return mock(cfg.recordOp('保存护栏规则', 'GUARDRAIL', `护栏${c.enabled ? '已开启' : '已关闭'}，API 地址 ${c.apiUrl}`), 200);
+    if (USE_MOCK.security) {
+      Object.assign(cfg.guardrailConfig, c);
+      return mock(cfg.recordOp('保存护栏规则', 'GUARDRAIL', `护栏${c.enabled ? '已开启' : '已关闭'}，API 地址 ${c.apiUrl}`), 200);
+    }
+    return http.put('/internal/security/guardrail', c);
   },
   testGuardrail(): Promise<{ ok: boolean; textMs: number; mmMs: number }> {
     return mock({ ok: cfg.guardrailConfig.enabled, textMs: cfg.guardrailConfig.textLatencyMs, mmMs: cfg.guardrailConfig.multimodalLatencyMs }, 1200);
   },
   saveGuardrailPolicy(p: GuardrailPolicy): Promise<OperationRecord> {
-    const idx = cfg.guardrailPolicies.findIndex((x) => x.policyId === p.policyId);
-    if (idx >= 0) cfg.guardrailPolicies[idx] = p;
-    else cfg.guardrailPolicies.unshift({ ...p, policyId: cfg.nextId('GD') });
-    return mock(cfg.recordOp('保存安全策略', p.policyId, `${p.name}：动作 ${p.action}，模块 ${p.modules.length} 个`), 200);
+    if (USE_MOCK.security) {
+      const idx = cfg.guardrailPolicies.findIndex((x) => x.policyId === p.policyId);
+      if (idx >= 0) cfg.guardrailPolicies[idx] = p;
+      else cfg.guardrailPolicies.unshift({ ...p, policyId: cfg.nextId('GD') });
+      return mock(cfg.recordOp('保存安全策略', p.policyId, `${p.name}：动作 ${p.action}，模块 ${p.modules.length} 个`), 200);
+    }
+    if (p.policyId) return http.put(`/internal/security/guardrail/policies/${p.policyId}`, p);
+    return http.post('/internal/security/guardrail/policies', p);
   },
   deleteGuardrailPolicy(policyId: string): Promise<OperationRecord> {
-    const idx = cfg.guardrailPolicies.findIndex((x) => x.policyId === policyId);
-    if (idx >= 0) cfg.guardrailPolicies.splice(idx, 1);
-    return mock(cfg.recordOp('删除安全策略', policyId, '策略已删除'), 200);
+    if (USE_MOCK.security) {
+      const idx = cfg.guardrailPolicies.findIndex((x) => x.policyId === policyId);
+      if (idx >= 0) cfg.guardrailPolicies.splice(idx, 1);
+      return mock(cfg.recordOp('删除安全策略', policyId, '策略已删除'), 200);
+    }
+    return http.delete(`/internal/security/guardrail/policies/${policyId}`);
   },
   toggleDetectModule(moduleKey: string): Promise<OperationRecord> {
     const m = cfg.detectModules.find((x) => x.moduleKey === moduleKey);
@@ -695,13 +870,17 @@ export const api = {
   /* ============ 多约束路由引擎（智能网关核心配置） ============ */
 
   getRoutingEngine(): Promise<RoutingEngineConfig> {
-    return mock({ ...cfg.routingEngine, weights: { ...cfg.routingEngine.weights } });
+    if (USE_MOCK.routing) return mock({ ...cfg.routingEngine, weights: { ...cfg.routingEngine.weights } });
+    return http.get('/internal/routing/engine');
   },
   saveRoutingEngine(c: RoutingEngineConfig): Promise<OperationRecord> {
-    Object.assign(cfg.routingEngine, c, { weights: { ...c.weights } });
-    const total = c.weights.latency + c.weights.cost + c.weights.risk + c.weights.load || 1;
-    const pct = (v: number) => `${Math.round((v / total) * 100)}%`;
-    return mock(cfg.recordOp('保存路由引擎配置', 'ROUTING-ENGINE', `权重 时延${pct(c.weights.latency)}/成本${pct(c.weights.cost)}/风险${pct(c.weights.risk)}/负载${pct(c.weights.load)}；缓存优先=${c.cacheFirst}，预算约束=${c.budgetGuard}，SLA优先=${c.slaPriority}，自动降级=${c.autoFallback}`), 200);
+    if (USE_MOCK.routing) {
+      Object.assign(cfg.routingEngine, c, { weights: { ...c.weights } });
+      const total = c.weights.latency + c.weights.cost + c.weights.risk + c.weights.load || 1;
+      const pct = (v: number) => `${Math.round((v / total) * 100)}%`;
+      return mock(cfg.recordOp('保存路由引擎配置', 'ROUTING-ENGINE', `权重 时延${pct(c.weights.latency)}/成本${pct(c.weights.cost)}/风险${pct(c.weights.risk)}/负载${pct(c.weights.load)}；缓存优先=${c.cacheFirst}，预算约束=${c.budgetGuard}，SLA优先=${c.slaPriority}，自动降级=${c.autoFallback}`), 200);
+    }
+    return http.put('/internal/routing/engine', c);
   },
 
   /* ============ 复核补充：告警处置闭环（十一章） ============ */

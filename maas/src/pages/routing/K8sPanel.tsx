@@ -36,6 +36,7 @@ export default function K8sPanel() {
   if (loading) return <div className="panel h-64 animate-pulse" />;
 
   return (
+    <div className="mock-data">
     <Panel
       title={
         <span className="flex items-center gap-1.5">
@@ -119,5 +120,6 @@ export default function K8sPanel() {
       </table>
       <p className="pt-2 text-[11px] text-text-secondary/70">模型实例以 Deployment 形态运行于 K8s，GPU 由设备插件直通（vGPU 切分在节点池层完成）；扩容/缩容联动容量预测，灰度命名空间隔离切流。</p>
     </Panel>
+    </div>
   );
 }

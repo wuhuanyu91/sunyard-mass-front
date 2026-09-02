@@ -58,7 +58,7 @@ export default function CostModelPanel() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="mock-data flex flex-col gap-3">
       <PageHeader
         crumb="计量运营"
         title="成本模型"

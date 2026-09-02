@@ -37,7 +37,7 @@ export default function TenantPanel() {
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="mock-data flex flex-col gap-3">
       <PageHeader
         crumb="安全审计"
         title="租户管理"

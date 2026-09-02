@@ -110,6 +110,7 @@ export default function ControlPlane() {
       </div>
 
       {/* 策略列表 */}
+      <div className="mock-data">
       <Panel height="100%">
         {filtered.length === 0 ? (
           <EmptyState text="当前筛选条件下无策略，点击「新建策略」创建" />
@@ -194,8 +195,7 @@ export default function ControlPlane() {
           </table>
         )}
       </Panel>
-
-      {/* 回滚 SLA 进度 */}
+      </div>
       {rollbackCountdown > 0 && (
         <div className="rounded border border-danger/40 bg-danger/5 px-4 py-3">
           <div className="flex items-center justify-between text-xs text-danger">
