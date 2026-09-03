@@ -75,7 +75,7 @@ export default function ReleaseArchive() {
   }
 
   return (
-    <div className="mock-data flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <PageHeader crumb="模型资产" title="发布归档" desc="灰度发布五步管控（提交 → 切流 → A/B 对照 → 放量/回滚 → 归档），下线模型统一归档可追溯" />
       {/* ================= 灰度发布控制台（P34） ================= */}
       <Panel
@@ -451,7 +451,6 @@ export default function ReleaseArchive() {
           </div>
         </Modal>
       )}
-    </div>
   );
 }
 

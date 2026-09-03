@@ -94,7 +94,7 @@ export default function GuardrailConfigPanel({ view = 'conn' }: { view?: GuardVi
   const urlOk = /^https:\/\/.+\..+/.test(apiUrl);
 
   return (
-    <div className="mock-data flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <PageHeader crumb="安全审计 / 护栏规则" title={VIEW_META[view].title} desc={VIEW_META[view].desc} />
       {!config.enabled && (
         <Banner tone="danger">
@@ -495,7 +495,6 @@ export default function GuardrailConfigPanel({ view = 'conn' }: { view?: GuardVi
           reload();
         }}
       />
-    </div>
   );
 }
 

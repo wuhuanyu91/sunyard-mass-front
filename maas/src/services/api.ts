@@ -115,6 +115,7 @@ export const USE_MOCK = {
   security: false,    // 安全审计已对接后端
   apiKey: false,      // API Key 已对接后端
   cache: false,       // 缓存管理已对接后端
+  apps: false,        // 应用注册已对接后端
 };
 
 /**
@@ -123,7 +124,7 @@ export const USE_MOCK = {
  */
 export const MOCK_APIS: ReadonlySet<string> = new Set([
   // ── 纯 mock 读取 ──
-  'getDeptNames', 'getApps', 'getResources', 'getInstances', 'getPolicies',
+  'getDeptNames', 'getResources', 'getInstances', 'getPolicies',
   'getModelCards', 'getPlazaApplies', 'getGrayReleases', 'getArchivedModels', 'getArchiveRules',
   'getDetectModules', 'getKeywordLibs', 'getDetectModels', 'getReportFeedbacks',
   'getPersonalTrend', 'getRoutingSaving', 'getEmergencyTickets', 'getOrchestration', 'getNodeConfig',
@@ -150,6 +151,26 @@ export function isMockApi(methodName: string): boolean {
 
 function mock<T>(data: T, delay = 120): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(data), delay));
+}
+
+/* ---------------- 后端应用数据转换 ---------------- */
+
+/** 后端 mas_app 行 → 前端 ApplicationRegistry */
+function mapBackendApp(r: Record<string, unknown>): ApplicationRegistry {
+  const statusNum = Number(r.status ?? 1);
+  return {
+    appId: String(r.appId ?? ''),
+    appName: String(r.appName ?? ''),
+    deptId: String(r.deptId ?? ''),
+    owner: String(r.ownerId ?? ''),
+    businessScenario: String(r.description ?? ''),
+    dataLevel: (String(r.dataLevel ?? 'L2') as ApplicationRegistry['dataLevel']),
+    slaLevel: (String(r.slaLevel ?? 'P1') as ApplicationRegistry['slaLevel']),
+    quotaToken: Number(r.monthQuota ?? 0),
+    quotaRequest: 0,
+    costBudget: 0,
+    status: statusNum === 1 ? 'ACTIVE' : statusNum === 2 ? 'SUSPENDED' : 'OFFLINE',
+  };
 }
 
 /* ---------------- 查询接口 ---------------- */
@@ -190,7 +211,10 @@ export const api = {
     return http.get('/internal/models');
   },
   getApps(): Promise<ApplicationRegistry[]> {
-    return mock(cfg.appsStore.map((a) => ({ ...a })));
+    if (USE_MOCK.apps) return mock(cfg.appsStore.map((a) => ({ ...a })));
+    return http.get<Record<string, unknown>[]>('/internal/apps').then(rows => {
+      return (rows || []).map(r => mapBackendApp(r));
+    });
   },
 
   getResources(): Promise<ComputeResource[]> {
@@ -1086,22 +1110,39 @@ export const api = {
 
   /* ============ 二轮完善：应用注册管理（P0-5） ============ */
 
-  saveApp(a: ApplicationRegistry): Promise<OperationRecord> {
-    const idx = cfg.appsStore.findIndex((x) => x.appId === a.appId);
-    if (idx >= 0) cfg.appsStore[idx] = { ...a };
-    else cfg.appsStore.push({ ...a, appId: cfg.nextId('APP') });
-    return mock(cfg.recordOp('应用注册变更', a.appId, `${a.appName}：${a.businessScenario}，SLA ${a.slaLevel}，数据等级 ${a.dataLevel}`), 200);
+  saveApp(a: ApplicationRegistry): Promise<ApplicationRegistry & { apiKey?: string }> {
+    if (USE_MOCK.apps) {
+      const idx = cfg.appsStore.findIndex((x) => x.appId === a.appId);
+      if (idx >= 0) cfg.appsStore[idx] = { ...a };
+      else cfg.appsStore.push({ ...a, appId: cfg.nextId('APP') });
+      return mock({ ...a, appId: a.appId || cfg.nextId('APP') } as ApplicationRegistry & { apiKey?: string });
+    }
+    if (a.appId) return http.put<Record<string, unknown>>(`/internal/apps/${a.appId}`, a).then(mapBackendApp) as Promise<ApplicationRegistry & { apiKey?: string }>;
+    return http.post<Record<string, unknown>>('/internal/apps', a).then(r => {
+      const mapped = mapBackendApp(r);
+      return { ...mapped, apiKey: r.apiKey as string | undefined };
+    }) as Promise<ApplicationRegistry & { apiKey?: string }>;
   },
   toggleApp(appId: string): Promise<OperationRecord> {
-    const a = cfg.appsStore.find((x) => x.appId === appId);
-    if (a) a.status = a.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-    return mock(cfg.recordOp(a?.status === 'ACTIVE' ? '启用应用' : '停用应用', appId, `${a?.appName ?? ''} 已${a?.status === 'ACTIVE' ? '启用' : '停用（路由不再分发）'}`), 200);
+    if (USE_MOCK.apps) {
+      const a = cfg.appsStore.find((x) => x.appId === appId);
+      if (a) a.status = a.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+      return mock(cfg.recordOp(a?.status === 'ACTIVE' ? '启用应用' : '停用应用', appId, `${a?.appName ?? ''} 已${a?.status === 'ACTIVE' ? '启用' : '停用（路由不再分发）'}`), 200);
+    }
+    return http.post<Record<string, unknown>>(`/internal/apps/${appId}/toggle`).then(() =>
+      cfg.recordOp('切换应用状态', appId, '应用启用/停用状态已切换')
+    );
   },
   deleteApp(appId: string): Promise<OperationRecord> {
-    const idx = cfg.appsStore.findIndex((x) => x.appId === appId);
-    const name = cfg.appsStore[idx]?.appName ?? appId;
-    if (idx >= 0) cfg.appsStore.splice(idx, 1);
-    return mock(cfg.recordOp('删除应用', appId, `${name} 已注销，关联 Key 与配额已回收`), 200);
+    if (USE_MOCK.apps) {
+      const idx = cfg.appsStore.findIndex((x) => x.appId === appId);
+      const name = cfg.appsStore[idx]?.appName ?? appId;
+      if (idx >= 0) cfg.appsStore.splice(idx, 1);
+      return mock(cfg.recordOp('删除应用', appId, `${name} 已注销，关联 Key 与配额已回收`), 200);
+    }
+    return http.delete<Record<string, unknown>>(`/internal/apps/${appId}`).then(() =>
+      cfg.recordOp('删除应用', appId, '应用已注销，关联 Key 与配额已回收')
+    );
   },
 
   /* ============ 核心补强：TCO 成本模型 / 效益评估 / 租户组织 ============ */

@@ -43,7 +43,6 @@ export default function MembersPanel() {
   if (loading) return <div className="panel h-52 animate-pulse" />;
 
   return (
-    <div className="mock-data">
     <Panel
       title={
         <span className="flex items-center gap-1.5">
@@ -133,7 +132,6 @@ export default function MembersPanel() {
         }}
       />
     </Panel>
-    </div>
   );
 }
 

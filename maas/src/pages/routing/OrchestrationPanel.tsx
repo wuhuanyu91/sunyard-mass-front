@@ -88,7 +88,7 @@ export default function OrchestrationPanel() {
   };
 
   return (
-    <div className="mock-data flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <PageHeader crumb="调度算力" title="资源编排" desc="推理引擎版本、批处理队列、KV Cache 治理与异构调度策略编排配置" />
       {/* 异构调度策略（厂商级：国产化优先等） */}
       <HeteroSchedPanel />
@@ -441,7 +441,6 @@ export default function OrchestrationPanel() {
 
       {/* 提交批量任务弹窗 */}
       {taskDialog && <BatchTaskDialog assets={assets} onClose={() => setTaskDialog(false)} onSaved={() => { setTaskDialog(false); api.getBatchTasks().then(setTasks); }} />}
-    </div>
   );
 }
 

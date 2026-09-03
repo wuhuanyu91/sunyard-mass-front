@@ -13,6 +13,7 @@ import ModelPlaza from './ModelPlaza';
 import ReleaseArchive from './ReleaseArchive';
 import Playground from './Playground';
 import BenefitPanel from './BenefitPanel';
+import AppRegistry from './AppRegistry';
 
 const fmtYuan = (n: number) => `¥${n.toLocaleString('zh-CN')}`;
 
@@ -48,7 +49,7 @@ export default function Assets() {
 
   return (
     <div className="flex flex-col gap-3">
-      {tab === 'conn' ? <ModelConnections /> : tab === 'plaza' ? <ModelPlaza /> : tab === 'playground' ? <Playground /> : tab === 'benefit' ? <BenefitPanel /> : tab === 'release' ? <ReleaseArchive /> : <AssetsOverview onOpenGray={() => navigate('/assets?tab=release')} />}
+      {tab === 'conn' ? <ModelConnections /> : tab === 'plaza' ? <ModelPlaza /> : tab === 'playground' ? <Playground /> : tab === 'benefit' ? <BenefitPanel /> : tab === 'release' ? <ReleaseArchive /> : tab === 'apps' ? <AppRegistry /> : <AssetsOverview onOpenGray={() => navigate('/assets?tab=release')} />}
     </div>
   );
 }

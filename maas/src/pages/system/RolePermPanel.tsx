@@ -35,7 +35,7 @@ export function RolePanel() {
   if (loading) return <div className="panel h-72 animate-pulse" />;
 
   return (
-    <div className="mock-data">
+    <>
       <PageHeader
         crumb="系统管理"
         title="角色管理"

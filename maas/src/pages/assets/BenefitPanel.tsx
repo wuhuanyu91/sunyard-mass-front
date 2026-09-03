@@ -41,7 +41,7 @@ export default function BenefitPanel() {
   }, [benefits]);
 
   return (
-    <div className="mock-data flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <PageHeader crumb="模型资产" title="效益评估" desc="基于调用量/成本/效果综合评估模型价值，为保留/升级/替换/下线提供决策依据" />
       {/* 口径说明（十章：效益 = 成本 + 效果 + 价值综合判断） */}
       <div className="panel flex items-center gap-2 px-4 py-2.5 text-xs">
@@ -125,6 +125,5 @@ export default function BenefitPanel() {
           解读示例：Qwen-72B 单位任务成本 467 元/千次、采纳率 68% → 建议优化（长上下文复杂推理场景才用旗舰）；第三方营销模型采纳率 61% → 建议替换为 Fin-Qwen-14B-SFT 或自研文案模型。
         </p>
       </Panel>
-    </div>
   );
 }

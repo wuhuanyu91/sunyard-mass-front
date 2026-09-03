@@ -106,17 +106,20 @@ export default function Dashboard() {
 
   const reload = () => {
     setLoading(true);
+    // 使用 allSettled 容错：单个 API 失败不影响其他数据展示
+    const safeGet = <T,>(p: Promise<T>, fallback: T): Promise<T> =>
+      p.catch(() => fallback);
     Promise.all([
-      api.getApps(),
-      api.getAssets(),
-      api.getResources(),
-      api.getAlerts(),
-      api.getTokenSeries(),
-      api.getTrendSeries(),
-      api.getDeptTco(),
-      api.getSummary(),
-      api.getAppTcoRank(),
-      api.getModelTcoRank(),
+      safeGet(api.getApps(), [] as ApplicationRegistry[]),
+      safeGet(api.getAssets(), [] as ModelAsset[]),
+      safeGet(api.getResources(), [] as ComputeResource[]),
+      safeGet(api.getAlerts(), [] as PlatformAlert[]),
+      safeGet(api.getTokenSeries(), [] as { t: string; input: number; output: number; cacheHit: number }[]),
+      safeGet(api.getTrendSeries(), [] as { t: string; gpuUtil: number; ttftP50: number; avgP95: number }[]),
+      safeGet(api.getDeptTco(), [] as { deptId: string; deptName: string; tco: number; tokens: number }[]),
+      safeGet(api.getSummary(), null as PlatformSummary | null),
+      safeGet(api.getAppTcoRank(), [] as { appId: string; name: string; tokens: number; tco: number }[]),
+      safeGet(api.getModelTcoRank(), [] as { assetId: string; name: string; calls: number; tco: number }[]),
     ]).then(([a, m, r, al, ts, tr, dt, su, ar, mr]) => {
       setApps(a);
       setAssets(m);

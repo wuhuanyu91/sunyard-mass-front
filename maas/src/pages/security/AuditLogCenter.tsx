@@ -64,7 +64,7 @@ export default function AuditLogCenter() {
   if (loading) return <div className="panel h-72 animate-pulse" />;
 
   return (
-    <div className="mock-data flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <PageHeader crumb="安全审计" title="审计日志" desc="全平台写操作留痕统一检索，含操作人、对象与明细，支持按监管要求导出取证" />
       <Panel
       title={
@@ -147,6 +147,5 @@ export default function AuditLogCenter() {
       )}
       <p className="mt-2 text-[11px] text-text-secondary/70">所有写操作（策略/配额/密钥/护栏/节点/应用/成员）自动落审计日志，含操作人、对象与明细，支持按监管要求导出取证。</p>
       </Panel>
-    </div>
   );
 }

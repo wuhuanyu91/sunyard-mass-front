@@ -112,7 +112,7 @@ export default function OpsDashboard() {
   const runningInstances = instances.filter((i) => i.assetId).length;
 
   return (
-    <div className="mock-data flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       {/* 视图头（九章：运维大盘面向技术团队，双大盘同口径） */}
       <div className="panel flex items-center justify-between px-4 py-3">
         <span className="flex items-center gap-2 text-sm font-medium text-text-primary">
@@ -130,7 +130,7 @@ export default function OpsDashboard() {
       </div>
 
       {/* 运维 KPI（同源聚合） */}
-      <div className="mock-data grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <div className="panel flex items-center justify-between p-3">
           <div>
             <div className="text-xs text-text-secondary">集群在线节点</div>
@@ -168,8 +168,7 @@ export default function OpsDashboard() {
       {/* 模型实例矩阵 + 集群健康/熔断 */}
       <div className="grid grid-cols-12 gap-3">
         <Panel title="模型实例矩阵" className="col-span-7" height={300} extra={<span className="text-xs text-text-secondary">引擎 · 量化 · 批处理 · KV · 时延 · 吞吐</span>}>
-          <div className="mock-data">
-            <table className="w-full text-xs">
+          <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-text-secondary">
                   <th className="pb-2 font-medium">实例</th>
@@ -201,11 +200,9 @@ export default function OpsDashboard() {
                 ))}
               </tbody>
             </table>
-          </div>
         </Panel>
 
         <div className="col-span-5 flex flex-col gap-3">
-          <div className="mock-data">
           <Panel title="集群健康（节点状态 + 熔断）" height={152}>
             <div className="grid grid-cols-3 gap-2">
               {(['RUNNING', 'MAINTENANCE', 'OFFLINE'] as const).map((k) => (
@@ -224,9 +221,7 @@ export default function OpsDashboard() {
               ))}
             </div>
           </Panel>
-          </div>
 
-          <div className="mock-data">
           <Panel title="容量余量 · 优先级队列" height={140}>
             {queue.map((q) => (
               <div key={q.priorityClass} className="mb-1.5 flex items-center gap-2 text-xs">
@@ -240,7 +235,6 @@ export default function OpsDashboard() {
             ))}
             <p className="mt-1 text-[10px] text-text-secondary/70">P0/P1 在线任务优先保障，P2 离线批量仅错峰窗口调度，不抢占 P0/P1 资源。</p>
           </Panel>
-          </div>
         </div>
       </div>
       <div className="grid grid-cols-12 gap-3">
@@ -260,7 +254,6 @@ export default function OpsDashboard() {
           </ResponsiveContainer>
         </Panel>
 
-        <div className="mock-data">
         <Panel title="资源热点（近 24h 高负载节点）" className="col-span-5" height={240} extra={<span className="text-xs text-text-secondary">联动错峰建议</span>}>
           <div className="overflow-auto pr-1">
             <table className="w-full text-xs">
@@ -291,7 +284,6 @@ export default function OpsDashboard() {
             </table>
           </div>
         </Panel>
-        </div>
       </div>
       <Panel title="连续批处理吞吐（吞吐提升 ↔ 首字时延联动观察）" height={200}>
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>

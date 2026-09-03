@@ -89,7 +89,7 @@ export default function QueuePanel() {
   }
 
   return (
-    <div className="mock-data flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <PageHeader crumb="调度算力" title="队列调度" desc="优先级队列分层视图与批量推理任务管理：P0 保障、错峰窗口调度、运行状态跟踪" />
 
       {/* 优先级队列（6.4.2 / 6.4.5） */}
@@ -240,6 +240,5 @@ export default function QueuePanel() {
           <p className="text-[11px] leading-relaxed text-text-secondary/70">提交后任务进入对应优先级队列，在错峰窗口内由调度器执行；低优任务可被 P0/P1 抢占。</p>
         </div>
       </Modal>
-    </div>
   );
 }

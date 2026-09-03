@@ -76,6 +76,7 @@ const NAV_TREE: NavGroup[] = [
     label: '模型资产', icon: Boxes, path: '/assets',
     children: [
       { label: '资产台账', to: '/assets' },
+      { label: '应用注册', to: '/assets?tab=apps' },
       { label: '模型接入', to: '/assets?tab=conn' },
       { label: '模型广场', to: '/assets?tab=plaza' },
       { label: '模型体验', to: '/assets?tab=playground' },

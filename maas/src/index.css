@@ -608,16 +608,6 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb {
   50% { transform: rotateX(58deg) rotateZ(45deg) translateY(-16px); }
 }
 
-/* Mock 数据标识：删除线 + 降低不透明度，标识非真实后端 API 数据 */
-.mock-data {
-  text-decoration: line-through;
-  text-decoration-color: rgba(220, 38, 38, 0.45);
-  opacity: 0.55;
-}
-html[data-theme='dark'] .mock-data {
-  text-decoration-color: rgba(239, 68, 68, 0.5);
-}
-
 /* 折线/面积入场（尊重 reduced-motion） */
 @media (prefers-reduced-motion: reduce) {
   *,

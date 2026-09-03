@@ -37,7 +37,7 @@ export default function TenantPanel() {
   };
 
   return (
-    <div className="mock-data flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <PageHeader
         crumb="安全审计"
         title="租户管理"
@@ -106,6 +106,5 @@ export default function TenantPanel() {
           租户映射按宁波银行组织条线锁定，数据等级 L3 为高敏感（脱敏/留痕要求更高）；停用租户后其 API Key 全部失效、日志按留存策略保留，恢复需重新启用。
         </p>
       </Panel>
-    </div>
   );
 }

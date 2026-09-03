@@ -77,7 +77,6 @@ export default function ModelConnections() {
         <SummaryKpi icon={<Gauge size={16} />} label="平均利用率" value={`${summary?.gpuUtil ?? 80}`} unit="%" hint="时间加权利用率" />
       </div>
 
-      <div className="mock-data">
       <Panel
         title={`模型接入列表（云端 ${cloudCount} / 本地 ${conns.filter((c) => c.source === 'LOCAL').length} / 租赁 ${conns.filter((c) => c.source === 'RENTAL').length}）`}
         extra={
@@ -152,7 +151,6 @@ export default function ModelConnections() {
           </table>
         )}
       </Panel>
-      </div>
 
       {dialog && <ConnFormDialog initial={dialog.data} onClose={() => setDialog(null)} onSaved={(isNew, name) => { setDialog(null); notify.success(`接入「${name}」已${isNew ? '创建' : '保存'}，可点击「测试」验证连通性`); reload(); }} />}
 
