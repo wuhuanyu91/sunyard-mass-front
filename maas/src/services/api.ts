@@ -379,7 +379,27 @@ export const api = {
 
   getApiKeys(): Promise<ApiKey[]> {
     if (USE_MOCK.apiKey) return mock([...cfg.apiKeys]);
-    return http.get('/internal/api-keys');
+    /* 后端返回 { keys: [...], total }，解包并将后端字段映射为前端 ApiKey 结构 */
+    return http.get<{ keys: Record<string, unknown>[]; total: number }>('/internal/api-keys').then((res) =>
+      (res.keys ?? []).map((k) => ({
+        keyId: String(k.keyPrefix ?? ''),
+        keyFull: '',
+        keyMasked: `${String(k.keyPrefix ?? '')}****`,
+        desc: String(k.purpose ?? ''),
+        ownerDept: String(k.teamName ?? ''),
+        appId: k.appId ? String(k.appId) : '',
+        status: k.status === 1 ? 'ENABLED' : 'DISABLED',
+        expireAt: k.expireAt ? String(k.expireAt) : null,
+        callQuota: 0,
+        usedCount: 0,
+        allowedModels: [],
+        rateLimitRuleId: null,
+        lastUsedAt: null,
+        createdAt: String(k.createdAt ?? ''),
+        env: 'PROD',
+        lastUsedIp: '',
+      })),
+    );
   },
   getRateLimitRules(): Promise<RateLimitRule[]> {
     if (USE_MOCK.routing) return mock([...cfg.rateLimitRules]);
