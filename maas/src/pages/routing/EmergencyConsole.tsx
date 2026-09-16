@@ -276,5 +276,6 @@ export default function EmergencyConsole() {
           api.getEmergencyTickets().then(setTickets);
         }}
       />
+    </div>
   );
 }

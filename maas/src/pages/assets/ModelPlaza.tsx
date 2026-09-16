@@ -182,6 +182,7 @@ export default function ModelPlaza() {
 
       {/* 申请弹窗 */}
       {applyCard && <ApplyDialog card={applyCard} onClose={() => setApplyCard(null)} onSaved={() => { setApplyCard(null); reload(); }} />}
+    </div>
   );
 }
 

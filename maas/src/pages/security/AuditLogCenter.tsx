@@ -147,5 +147,6 @@ export default function AuditLogCenter() {
       )}
       <p className="mt-2 text-[11px] text-text-secondary/70">所有写操作（策略/配额/密钥/护栏/节点/应用/成员）自动落审计日志，含操作人、对象与明细，支持按监管要求导出取证。</p>
       </Panel>
+    </div>
   );
 }

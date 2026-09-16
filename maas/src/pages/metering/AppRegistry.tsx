@@ -136,6 +136,7 @@ export default function AppRegistry() {
         }}
       />
       </Panel>
+    </div>
   );
 }
 

@@ -66,7 +66,7 @@ export default function RoutingPanel() {
       setLoading(false);
       const trace = params.get('trace');
       if (trace) {
-        const hit = lg.find((l) => l.traceId === trace);
+        const hit = lg.find((l: RouterLog) => l.traceId === trace);
         if (hit) setSelected(hit);
       }
     });

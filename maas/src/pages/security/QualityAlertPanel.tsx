@@ -95,6 +95,7 @@ export default function QualityAlertPanel() {
 
       {dialog && <RuleDialog initial={dialog.data} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); reload(); }} />}
       </Panel>
+    </div>
   );
 }
 

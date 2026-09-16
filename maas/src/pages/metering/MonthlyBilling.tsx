@@ -114,5 +114,6 @@ export default function MonthlyBilling() {
       </table>
       <p className="mt-2 text-[11px] text-text-secondary/70">TCO 四类成本分摊（基础设施/推理计算/软件许可/外部调用），财务口径由管理部门确认；环比按上月同期同部门比较。支持按月导出 CSV 供财务结算。</p>
       </Panel>
+    </div>
   );
 }

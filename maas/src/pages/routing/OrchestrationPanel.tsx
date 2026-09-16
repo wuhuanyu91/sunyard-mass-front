@@ -441,6 +441,7 @@ export default function OrchestrationPanel() {
 
       {/* 提交批量任务弹窗 */}
       {taskDialog && <BatchTaskDialog assets={assets} onClose={() => setTaskDialog(false)} onSaved={() => { setTaskDialog(false); api.getBatchTasks().then(setTasks); }} />}
+    </div>
   );
 }
 

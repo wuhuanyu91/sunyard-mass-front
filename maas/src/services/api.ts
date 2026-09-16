@@ -28,10 +28,12 @@ import {
 import type {
   ApplicationRegistry,
   Announcement,
+  BatchPoint,
   BatchTask,
   CircuitBreaker,
   ComputeResource,
   EvalResult,
+  FunnelStage,
   HeteroSchedPolicy,
   HeteroVendor,
   Instance,
@@ -175,7 +177,8 @@ function mapBackendApp(r: Record<string, unknown>): ApplicationRegistry {
 
 /* ---------------- 查询接口 ---------------- */
 
-export type { PlatformSummary, DeptTco, TokenPoint, TrendPoint } from './data';
+import type { PlatformSummary, DeptTco, TokenPoint, TrendPoint } from './data';
+export type { PlatformSummary, DeptTco, TokenPoint, TrendPoint };
 
 export const api = {
   env: () => ENV_TAG,
@@ -196,14 +199,14 @@ export const api = {
     return mock(DEPT_NAME_MAP);
   },
 
-  getAppTcoRank() {
+  getAppTcoRank(): Promise<{ appId: string; name: string; tokens: number; tco: number }[]> {
     if (USE_MOCK.dashboard) return mock(getAppTcoRank());
-    return http.get('/internal/dashboard/app-tco-rank');
+    return http.get<{ appId: string; name: string; tokens: number; tco: number }[]>('/internal/dashboard/app-tco-rank');
   },
 
-  getModelTcoRank() {
+  getModelTcoRank(): Promise<{ assetId: string; name: string; calls: number; tco: number }[]> {
     if (USE_MOCK.dashboard) return mock(getModelTcoRank());
-    return http.get('/internal/dashboard/model-tco-rank');
+    return http.get<{ assetId: string; name: string; calls: number; tco: number }[]>('/internal/dashboard/model-tco-rank');
   },
 
   getAssets(): Promise<ModelAsset[]> {
@@ -294,14 +297,14 @@ export const api = {
     return mock([...evals]);
   },
 
-  getTokenSeries() {
+  getTokenSeries(): Promise<TokenPoint[]> {
     if (USE_MOCK.dashboard) return mock(getTokenSeries(24, 60));
-    return http.get('/internal/dashboard/token-series', { hours: 24, step: 60 });
+    return http.get<TokenPoint[]>('/internal/dashboard/token-series', { hours: 24, step: 60 });
   },
 
-  getTrendSeries() {
+  getTrendSeries(): Promise<TrendPoint[]> {
     if (USE_MOCK.dashboard) return mock(getTrendSeries(24, 60));
-    return http.get('/internal/dashboard/trend-series', { hours: 24, step: 60 });
+    return http.get<TrendPoint[]>('/internal/dashboard/trend-series', { hours: 24, step: 60 });
   },
 
   getDeptTco(): Promise<DeptTco[]> {
@@ -317,9 +320,9 @@ export const api = {
     });
   },
 
-  getFunnelData() {
+  getFunnelData(): Promise<FunnelStage[]> {
     if (USE_MOCK.dashboard) return mock(getFunnelData());
-    return http.get('/internal/dashboard/funnel');
+    return http.get<FunnelStage[]>('/internal/dashboard/funnel');
   },
 
   getRateLimitHits() {
@@ -346,9 +349,9 @@ export const api = {
     return mock(getQueueData());
   },
 
-  getBatchTrend() {
+  getBatchTrend(): Promise<BatchPoint[]> {
     if (USE_MOCK.dashboard) return mock(getBatchTrend());
-    return http.get('/internal/dashboard/batch-trend');
+    return http.get<BatchPoint[]>('/internal/dashboard/batch-trend');
   },
 
   getHeatmapData() {

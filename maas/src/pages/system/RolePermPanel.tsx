@@ -156,7 +156,7 @@ export function RolePanel() {
           setDeleteTarget(null);
         }}
       />
-    </div>
+    </>
   );
 }
 

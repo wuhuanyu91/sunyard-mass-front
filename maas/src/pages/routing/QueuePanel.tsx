@@ -240,5 +240,6 @@ export default function QueuePanel() {
           <p className="text-[11px] leading-relaxed text-text-secondary/70">提交后任务进入对应优先级队列，在错峰窗口内由调度器执行；低优任务可被 P0/P1 抢占。</p>
         </div>
       </Modal>
+    </div>
   );
 }

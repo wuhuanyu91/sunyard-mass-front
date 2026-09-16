@@ -451,6 +451,7 @@ export default function ReleaseArchive() {
           </div>
         </Modal>
       )}
+    </div>
   );
 }
 

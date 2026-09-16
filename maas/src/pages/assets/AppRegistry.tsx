@@ -8,8 +8,6 @@ import StatusTag from '../../components/ui/StatusTag';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useNotify } from '../../components/ui/Toast';
 
-const STATUS_MAP: Record<number, AppStatus> = { 1: 'ACTIVE', 2: 'SUSPENDED', '0': 'OFFLINE' };
-const STATUS_LABEL: Record<AppStatus, string> = { ACTIVE: '已启用', SUSPENDED: '已停用', OFFLINE: '已下线' };
 const SLA_OPTIONS: SlaLevel[] = ['P0', 'P1', 'P2'];
 const DATA_OPTIONS: DataLevel[] = ['L1', 'L2', 'L3'];
 

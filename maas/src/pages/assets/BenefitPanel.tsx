@@ -125,5 +125,6 @@ export default function BenefitPanel() {
           解读示例：Qwen-72B 单位任务成本 467 元/千次、采纳率 68% → 建议优化（长上下文复杂推理场景才用旗舰）；第三方营销模型采纳率 61% → 建议替换为 Fin-Qwen-14B-SFT 或自研文案模型。
         </p>
       </Panel>
+    </div>
   );
 }

@@ -170,5 +170,6 @@ export default function CostModelPanel() {
         </div>
       </div>
       </div>
+    </div>
   );
 }

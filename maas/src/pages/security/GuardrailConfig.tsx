@@ -495,6 +495,7 @@ export default function GuardrailConfigPanel({ view = 'conn' }: { view?: GuardVi
           reload();
         }}
       />
+    </div>
   );
 }
 
