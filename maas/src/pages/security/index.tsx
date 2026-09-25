@@ -102,14 +102,23 @@ function SecurityOverview() {
   const [alertNote, setAlertNote] = useState('');
 
   useEffect(() => {
-    Promise.all([api.getSecurityEvents(), api.getAlerts(), api.getRouterLogs(), api.getSummary(), api.getAlertActions()]).then(([ev, al, lg, su, aa]) => {
-      setEvents(ev);
-      setAlerts(al);
-      setLogs(lg);
-      setSummary(su);
-      setAlertActions(aa);
-      setLoading(false);
-    });
+    // 任一接口失败都降级为空数据，避免 Promise.all 整体 reject 导致页面永久 loading / 白屏
+    Promise.all([
+      api.getSecurityEvents().catch(() => [] as SecurityEvent[]),
+      api.getAlerts().catch(() => [] as PlatformAlert[]),
+      api.getRouterLogs().catch(() => [] as RouterLog[]),
+      api.getSummary().catch(() => null as PlatformSummary | null),
+      api.getAlertActions().catch(() => [] as AlertAction[]),
+    ])
+      .then(([ev, al, lg, su, aa]) => {
+        setEvents(Array.isArray(ev) ? ev : []);
+        setAlerts(Array.isArray(al) ? al : []);
+        setLogs(Array.isArray(lg) ? lg : []);
+        setSummary(su);
+        setAlertActions(Array.isArray(aa) ? aa : []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   /** 告警处置（十一章闭环）：提交意见 → 状态流转 → 留痕 */

@@ -37,7 +37,7 @@ function responseToCamelCase<T>(data: unknown): T {
   return convertKeys<T>(data, snakeToCamel);
 }
 
-/** 前端请求 camelCase → 后端 snake_case */
+/** 前端请求 camelCase → 后端 snake_case（仅查询参数使用；请求体保持 camelCase 与后端 body.get("xxxYyy") 读取口径一致） */
 function requestToSnakeCase(data: unknown): unknown {
   return convertKeys(data, camelToSnake);
 }
@@ -58,7 +58,7 @@ export class ApiError extends Error {
 /* ---------------- 核心请求函数 ---------------- */
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   params?: Record<string, string | number | boolean | undefined | null>;
 }
@@ -77,6 +77,31 @@ function buildUrl(path: string, params?: Record<string, string | number | boolea
   return url.toString();
 }
 
+/**
+ * 管理端点令牌（后端 /internal/* 已启用 AdminAuthFilter 强制认证）
+ * 优先取 localStorage；其次取构建期环境变量 VITE_ADMIN_TOKEN（生产必须注入强令牌）；
+ * 缺省使用演示令牌 mat-demo-admin-token（仅限本地开发）
+ */
+export const ADMIN_TOKEN_KEY = 'mas_admin_token';
+const BUILD_ADMIN_TOKEN = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_ADMIN_TOKEN;
+export const DEFAULT_ADMIN_TOKEN = (BUILD_ADMIN_TOKEN && BUILD_ADMIN_TOKEN.trim()) || 'mat-demo-admin-token';
+
+export function getAdminToken(): string {
+  try {
+    return localStorage.getItem(ADMIN_TOKEN_KEY) || DEFAULT_ADMIN_TOKEN;
+  } catch {
+    return DEFAULT_ADMIN_TOKEN;
+  }
+}
+
+export function setAdminToken(token: string): void {
+  try {
+    localStorage.setItem(ADMIN_TOKEN_KEY, token);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 统一请求函数 */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, params } = options;
@@ -85,10 +110,16 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+  // 管理端点附加认证令牌（AdminAuthFilter 校验，并据此回填 X-Operator 操作留痕）
+  if (path.startsWith('/internal/')) {
+    headers['X-Admin-Token'] = getAdminToken();
+  }
 
   const fetchOptions: RequestInit = { method, headers };
   if (body && method !== 'GET') {
-    fetchOptions.body = JSON.stringify(requestToSnakeCase(body));
+    // 请求体保持 camelCase：后端管理端点统一按 body.get("grayPercent") 等 camel key 读取，
+    // 此前转 snake 会导致后端静默取默认值（写操作看似 200 实际未生效）
+    fetchOptions.body = JSON.stringify(body);
   }
 
   let response: Response;
@@ -134,6 +165,9 @@ export const http = {
   },
   put<T>(path: string, body?: unknown) {
     return request<T>(path, { method: 'PUT', body });
+  },
+  patch<T>(path: string, body?: unknown) {
+    return request<T>(path, { method: 'PATCH', body });
   },
   delete<T>(path: string) {
     return request<T>(path, { method: 'DELETE' });

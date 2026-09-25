@@ -84,7 +84,9 @@ export default function MembersPanel() {
                 </span>
               </td>
               <td className="num py-2 text-xs text-text-secondary">
-                {new Date(m.lastLoginAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                {m.lastLoginAt && !Number.isNaN(Date.parse(m.lastLoginAt))
+                  ? new Date(m.lastLoginAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+                  : '—'}
               </td>
               <td className="py-2">
                 <ToggleSwitch

@@ -83,6 +83,7 @@ import type {
   PersonalTrendPoint,
   PersonalUsage,
   PlazaApply,
+  PricingRule,
   QuotaProfile,
   RateLimitRule,
   ReportFeedback,
@@ -125,20 +126,27 @@ export const USE_MOCK = {
  * 页面中使用这些方法的区域应以删除线样式展示
  */
 export const MOCK_APIS: ReadonlySet<string> = new Set([
-  // ── 纯 mock 读取 ──
-  'getDeptNames', 'getResources', 'getInstances', 'getPolicies',
-  'getModelCards', 'getPlazaApplies', 'getGrayReleases', 'getArchivedModels', 'getArchiveRules',
+  // ── 纯 mock 读取（后端尚未提供对应能力） ──
+  'getDeptNames', 'getInstances',
+  'getModelCards', 'getPlazaApplies', 'getArchivedModels', 'getArchiveRules',
   'getDetectModules', 'getKeywordLibs', 'getDetectModels', 'getReportFeedbacks',
   'getPersonalTrend', 'getRoutingSaving', 'getEmergencyTickets', 'getOrchestration', 'getNodeConfig',
-  'getTenantRetentions', 'getOperationRecords',
+  'getTenantRetentions',
   'getHeteroVendors', 'getHeteroSchedPolicy',
-  'getAlertActions', 'getApprovals', 'getCostAlertConfig', 'getKvGovernance',
+  'getApprovals', 'getCostAlertConfig', 'getKvGovernance',
   'getEngineVersions', 'getExecutedPolicies',
-  'getQualityAlertRules', 'getMembers', 'getMonthlyBills', 'getAnnouncements',
+  'getQualityAlertRules', 'getAnnouncements',
   'getBatchTasks', 'getMyApplications',
-  'getCostModelConfig', 'getModelBenefits', 'getTenantOrgs',
-  'getSysUsers', 'getSysRoles', 'getPermMatrix', 'getPlatformServices',
+  'getCostModelConfig', 'getModelBenefits',
+  'getPlatformServices',
   'getSysTickets', 'getSystemParams', 'getK8sClusters', 'getK8sPods',
+  // ── 以下已于 2026-09-24 接入真实后端（RBAC / 租户 / 策略 / 计费 / 安全 / 算力 / 审计） ──
+  // getResources → /internal/compute/nodes（真实采集）
+  // getPolicies → /internal/policies
+  // getMembers → /internal/rbac/members；getSysUsers/getSysRoles/getPermMatrix → /internal/rbac/*
+  // getTenantOrgs → /internal/tenants；getMonthlyBills → /internal/billing/bills
+  // getOperationRecords → /internal/system/op-logs；getGrayReleases → /internal/models/releases
+  // getAlertActions → /internal/security/alerts
   // ── 后端端点已从契约移除，降级为 mock ──
   'getCircuitBreakers', 'getQueueData', 'getHeatmapData',
   'getRoutingRuleSets', 'getAggregationGroups', 'getElasticSwitch',
@@ -221,7 +229,29 @@ export const api = {
   },
 
   getResources(): Promise<ComputeResource[]> {
-    return mock(cfg.resourcesStore.map((r) => ({ ...r })));
+    // 真实采集口径（算力 Agent 上报 mas_compute_metric），无数据时返回空列表而非模拟值
+    return http
+      .get<Record<string, unknown>[]>('/internal/compute/nodes', { hours: 24 })
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          resourceId: String(r.nodeId ?? ''),
+          name: String(r.nodeId ?? ''),
+          pool: String(r.nodeId ?? ''),
+          vendor: '行内集群',
+          gpuType: '—',
+          gpuCount: 0,
+          gpuUtil: Number(r.gpuUtil ?? 0),
+          gpuMemUtil: Number(r.gpuMemUtil ?? 0),
+          vgpuEnabled: false,
+          quantLevel: 'FP16',
+          replicas: 0,
+          status: 'ONLINE' as ComputeResource['status'],
+          gpuHours: Number(r.gpuHours ?? 0),
+          requests: Number(r.requests ?? 0),
+          tokens: Number(r.tokens ?? 0),
+        })) as unknown as ComputeResource[],
+      )
+      .catch(() => []);
   },
 
   getInstances(): Promise<Instance[]> {
@@ -229,7 +259,21 @@ export const api = {
   },
 
   getPolicies(): Promise<Policy[]> {
-    return mock(cfg.policiesStore.map((p) => ({ ...p })));
+    return http
+      .get<Record<string, unknown>[]>('/internal/policies')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          policyId: String(r.policyId ?? ''),
+          name: String(r.name ?? ''),
+          category: String(r.category ?? 'ROUTING'),
+          scope: String(r.scope ?? '全局'),
+          status: String(r.status ?? 'DRAFT') as Policy['status'],
+          version: Number(r.currentVersion ?? 0),
+          owner: String(r.owner ?? ''),
+          updatedAt: String(r.updatedAt ?? ''),
+        })) as unknown as Policy[],
+      )
+      .catch(() => cfg.policiesStore.map((p) => ({ ...p })));
   },
 
   getRouterLogs(): Promise<RouterLog[]> {
@@ -252,8 +296,9 @@ export const api = {
       return (res.logs || []).map((log, i) => ({
         billId: String(log.logId ?? `BILL-${i}`),
         traceId: String(log.logId ?? ''),
-        tenantId: 'TENANT-TECH',
-        deptId: 'DEPT-TECH',
+        // 租户/部门取后端真实归属（此前硬编码 TENANT-TECH / DEPT-TECH）
+        tenantId: String(log.tenantId ?? 'UNKNOWN'),
+        deptId: String(log.deptId ?? ''),
         appId: String(log.appType ?? ''),
         assetId: String(log.model ?? ''),
         modelVersion: 'v1.0',
@@ -269,10 +314,11 @@ export const api = {
         instanceHours: 0,
         queueWaitMs: 0,
         costInfra: 0,
-        costCompute: (Number(log.inputTokens ?? 0) + Number(log.outputTokens ?? 0)) * 0.00025,
+        // 成本统一取后端计价引擎口径（此前前端自行按 0.00025 重算，与后端 0.0016 对不上）
+        costCompute: Number(log.cost ?? 0),
         costLicense: 0,
         costExternal: 0,
-        tcoTotal: (Number(log.inputTokens ?? 0) + Number(log.outputTokens ?? 0)) * 0.00025,
+        tcoTotal: Number(log.cost ?? 0),
         success: log.status === 'SUCCESS',
         retryTokensIncluded: false,
       }));
@@ -281,12 +327,16 @@ export const api = {
 
   getSecurityEvents(): Promise<SecurityEvent[]> {
     if (USE_MOCK.security) return mock(getSecurityEvents());
-    return http.get('/internal/security/events');
+    // 后端返回 { events: [...], total }，需解包为数组（否则页面 .filter 崩溃白屏）
+    return http
+      .get<{ events: SecurityEvent[]; total: number }>('/internal/security/events')
+      .then((res) => res?.events ?? [])
+      .catch(() => []);
   },
 
   getAlerts(): Promise<PlatformAlert[]> {
     if (USE_MOCK.security) return mock(cfg.alertsStore.map((a) => ({ ...a })));
-    return http.get('/internal/security/alerts');
+    return http.get<PlatformAlert[]>('/internal/security/alerts').catch(() => []);
   },
 
   getCircuitBreakers(): Promise<CircuitBreaker[]> {
@@ -428,7 +478,22 @@ export const api = {
     return mock([...cfg.plazaApplies]);
   },
   getGrayReleases(): Promise<GrayRelease[]> {
-    return mock(cfg.grayReleases.map((g) => ({ ...g })));
+    return http
+      .get<Record<string, unknown>[]>('/internal/models/releases')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          releaseId: String(r.releaseId ?? ''),
+          modelId: String(r.modelId ?? ''),
+          fromVersion: String(r.fromVersion ?? ''),
+          toVersion: String(r.toVersion ?? ''),
+          percent: Number(r.grayPercent ?? 0),
+          scope: String(r.grayScope ?? '全局'),
+          status: String(r.status ?? 'GRAYING'),
+          operator: String(r.operator ?? ''),
+          createdAt: String(r.createdAt ?? ''),
+        })) as unknown as GrayRelease[],
+      )
+      .catch(() => cfg.grayReleases.map((g) => ({ ...g })));
   },
   getArchivedModels(): Promise<ArchivedModel[]> {
     return mock([...cfg.archivedModels]);
@@ -490,7 +555,20 @@ export const api = {
     return mock([...cfg.tenantRetentions]);
   },
   getOperationRecords(): Promise<OperationRecord[]> {
-    return mock([...cfg.operationRecords]);
+    // 操作审计留痕已持久化到 mas_op_log，不再依赖前端内存数组
+    return http
+      .get<{ records: Record<string, unknown>[]; total: number }>('/internal/system/op-logs', { page: 1, size: 50 })
+      .then((res) =>
+        (res.records || []).map((r) => ({
+          opId: String(r.opId ?? ''),
+          opType: String(r.opType ?? ''),
+          operator: String(r.operator ?? ''),
+          targetId: String(r.targetId ?? ''),
+          detail: String(r.detail ?? ''),
+          createdAt: String(r.createdAt ?? ''),
+        })) as OperationRecord[],
+      )
+      .catch(() => [...cfg.operationRecords]);
   },
 
   /* ============ 配置域写操作（内存态 mock，返回留痕记录） ============ */
@@ -789,11 +867,20 @@ export const api = {
     if (p) p.status = p.status === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
     return mock(cfg.recordOp(p?.status === 'ACTIVE' ? '启用策略' : '停用策略', policyId, p?.policyName ?? ''), 200);
   },
-  /** DRAFT（含被驳回）策略重新提交审批（闭环①） */
+  /** DRAFT（含被驳回）策略重新提交审批（闭环①）—— 真实后端 */
   submitPolicy(policyId: string): Promise<OperationRecord> {
-    const p = cfg.policiesStore.find((x) => x.policyId === policyId);
-    if (p) p.status = 'PENDING_APPROVAL';
-    return mock(cfg.recordOp('提交审批', policyId, `${p?.policyName ?? ''} v${p?.version} 已提交审批（顶栏待办联动）`), 200);
+    return http
+      .post<Record<string, unknown>>(`/internal/policies/${policyId}/submit`, {})
+      .then(() =>
+        ({
+          opId: 'OP-' + Date.now(),
+          opType: '提交审批',
+          operator: '平台管理员',
+          targetId: policyId,
+          detail: '已提交审批（顶栏待办联动）',
+          createdAt: new Date().toISOString(),
+        }) as unknown as OperationRecord,
+      );
   },
 
   /** 配额恢复审批（闭环②）：通过则解除停发，驳回则保持停发 */
@@ -933,7 +1020,21 @@ export const api = {
   /* ============ 复核补充：告警处置闭环（十一章） ============ */
 
   getAlertActions(): Promise<AlertAction[]> {
-    return mock([...cfg.alertActions]);
+    return http
+      .get<Record<string, unknown>[]>('/internal/security/alerts')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          actionId: String(r.alertId ?? ''),
+          alertId: String(r.alertId ?? ''),
+          level: String(r.eventLevel ?? 'INFO'),
+          title: String(r.title ?? ''),
+          status: String(r.alertStatus ?? 'OPEN'),
+          detail: String(r.detail ?? ''),
+          traceId: String(r.traceId ?? ''),
+          createdAt: String(r.createdAt ?? ''),
+        })) as unknown as AlertAction[],
+      )
+      .catch(() => [...cfg.alertActions]);
   },
   /** 告警处置：ACK 待处置→已确认；RESOLVE_START →处置中；CLOSE →已关闭 */
   alertAction(alertId: string, action: AlertAction['action'], note: string): Promise<OperationRecord> {
@@ -1057,7 +1158,17 @@ export const api = {
   /* ============ 二轮完善：成员与权限（P1-8） ============ */
 
   getMembers(): Promise<MemberInfo[]> {
-    return mock([...cfg.members]);
+    return http.get<Record<string, unknown>[]>('/internal/rbac/members').then((rows) =>
+      (rows || []).map((r) => ({
+        memberId: String(r.userCode ?? ''),
+        name: String(r.userName ?? r.userCode ?? ''),
+        deptId: String(r.deptId ?? ''),
+        role: String(r.roles ?? '').split(',')[0] || 'VIEWER',
+        status: Number(r.status) === 1 ? 'ACTIVE' : 'DISABLED',
+        lastLoginAt: String(r.lastLoginAt ?? ''),
+        lastActive: String(r.lastLoginAt ?? ''),
+      })) as unknown as MemberInfo[],
+    );
   },
   saveMember(m: MemberInfo): Promise<OperationRecord> {
     const idx = cfg.members.findIndex((x) => x.memberId === m.memberId);
@@ -1080,7 +1191,25 @@ export const api = {
   /* ============ 二轮完善：月度账单（P1-11） ============ */
 
   getMonthlyBills(): Promise<MonthlyBill[]> {
-    return mock([...cfg.monthlyBills]);
+    return http.get<Record<string, unknown>[]>('/internal/billing/bills').then((rows) =>
+      (rows || []).map((r) => ({
+        billId: String(r.billNo ?? ''),
+        month: String(r.billMonth ?? ''),
+        tenantId: String(r.tenantId ?? ''),
+        deptId: String(r.deptId ?? ''),
+        requestCount: Number(r.totalCalls ?? 0),
+        promptTokens: 0,
+        completionTokens: Number(r.totalTokens ?? 0),
+        gpuHours: 0,
+        instanceHours: 0,
+        costInfra: 0,
+        costCompute: Number(r.totalAmount ?? 0),
+        costLicense: 0,
+        costExternal: 0,
+        tcoTotal: Number(r.totalAmount ?? 0),
+        status: String(r.status ?? 'DRAFT'),
+      })) as unknown as MonthlyBill[],
+    );
   },
 
   /* ============ 二轮完善：公告通知（P2-14） ============ */
@@ -1140,8 +1269,18 @@ export const api = {
       else cfg.appsStore.push({ ...a, appId: cfg.nextId('APP') });
       return mock({ ...a, appId: a.appId || cfg.nextId('APP') } as ApplicationRegistry & { apiKey?: string });
     }
-    if (a.appId) return http.put<Record<string, unknown>>(`/internal/apps/${a.appId}`, a).then(mapBackendApp) as Promise<ApplicationRegistry & { apiKey?: string }>;
-    return http.post<Record<string, unknown>>('/internal/apps', a).then(r => {
+    // 前端字段 -> 后端契约映射（appName/deptId/ownerId/slaLevel/dataLevel/monthQuota/description）
+    const backendBody = {
+      appName: a.appName,
+      deptId: a.deptId,
+      ownerId: a.owner || 'admin',
+      slaLevel: a.slaLevel,
+      dataLevel: a.dataLevel,
+      monthQuota: a.quotaToken,
+      description: a.businessScenario,
+    };
+    if (a.appId) return http.put<Record<string, unknown>>(`/internal/apps/${a.appId}`, backendBody).then(mapBackendApp) as Promise<ApplicationRegistry & { apiKey?: string }>;
+    return http.post<Record<string, unknown>>('/internal/apps', backendBody).then(r => {
       const mapped = mapBackendApp(r);
       return { ...mapped, apiKey: r.apiKey as string | undefined };
     }) as Promise<ApplicationRegistry & { apiKey?: string }>;
@@ -1190,18 +1329,53 @@ export const api = {
     return mock(cfg.modelBenefits.map((b) => ({ ...b })));
   },
   getTenantOrgs(): Promise<TenantOrg[]> {
-    return mock(cfg.tenantOrgs.map((t) => ({ ...t, mappedDepts: [...t.mappedDepts] })));
+    return Promise.all([
+      http.get<Record<string, unknown>[]>('/internal/tenants'),
+      http.get<Record<string, unknown>[]>('/internal/tenants/dept-mapping'),
+    ]).then(([tenants, mappings]) =>
+      (tenants || []).map((t) => {
+        const tid = String(t.tenantId ?? '');
+        return {
+          tenantId: tid,
+          tenantName: String(t.tenantName ?? tid),
+          status: Number(t.status) === 1 ? 'ACTIVE' : 'SUSPENDED',
+          mappedDepts: (mappings || [])
+            .filter((m) => String(m.tenantId ?? '') === tid)
+            .map((m) => String(m.deptId ?? '')),
+        } as TenantOrg;
+      }),
+    );
   },
   toggleTenant(tenantId: string): Promise<OperationRecord> {
     const t = cfg.tenantOrgs.find((x) => x.tenantId === tenantId);
-    if (t) t.status = t.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-    return mock(cfg.recordOp(t?.status === 'ACTIVE' ? '启用租户' : '停用租户', tenantId, `${t?.tenantName ?? ''} 已${t?.status === 'ACTIVE' ? '启用：恢复模型/数据/算力权限' : '停用：即时收回模型与数据权限，在途请求排空'}`), 200);
+    const nextEnabled = !(t?.status === 'ACTIVE');
+    if (t) t.status = nextEnabled ? 'ACTIVE' : 'SUSPENDED';
+    return http
+      .patch<Record<string, unknown>>(`/internal/tenants/${tenantId}/status`, { enabled: nextEnabled })
+      .then(() =>
+        cfg.recordOp(
+          nextEnabled ? '启用租户' : '停用租户',
+          tenantId,
+          `${t?.tenantName ?? ''} 已${nextEnabled ? '启用：恢复模型/数据/算力权限' : '停用：即时收回模型与数据权限，在途请求排空'}`,
+        ),
+      );
   },
 
   /* ============ 系统管理（用户/角色/权限/监控/工单/参数） ============ */
 
   getSysUsers(): Promise<SysUser[]> {
-    return mock([...cfg.sysUsers]);
+    return http.get<Record<string, unknown>[]>('/internal/rbac/users').then((rows) =>
+      (rows || []).map((r) => ({
+        userId: String(r.userCode ?? ''),
+        account: String(r.userCode ?? ''),
+        name: String(r.userName ?? ''),
+        deptName: String(r.deptId ?? ''),
+        role: String(r.deptId ?? ''),
+        status: Number(r.locked) === 1 ? 'LOCKED' : Number(r.status) === 1 ? 'ACTIVE' : 'DISABLED',
+        mfa: Number(r.mfaEnabled) === 1,
+        lastLoginAt: String(r.lastLoginAt ?? ''),
+      })) as SysUser[],
+    );
   },
   toggleSysUser(userId: string): Promise<OperationRecord> {
     const u = cfg.sysUsers.find((x) => x.userId === userId);
@@ -1236,7 +1410,16 @@ export const api = {
     return mock(cfg.recordOp('修改密码', account, '本人修改登录密码，新密码符合复杂度策略'), 200);
   },
   getSysRoles(): Promise<SysRole[]> {
-    return mock([...cfg.sysRoles]);
+    return http.get<Record<string, unknown>[]>('/internal/rbac/roles').then((rows) =>
+      (rows || []).map((r) => ({
+        roleKey: String(r.roleCode ?? ''),
+        roleName: String(r.roleName ?? ''),
+        desc: String(r.description ?? ''),
+        scope: '全局',
+        builtIn: Number(r.builtin) === 1,
+        userCount: 0,
+      })) as SysRole[],
+    );
   },
   addSysRole(r: { roleName: string; desc: string; scope: string }): Promise<OperationRecord> {
     cfg.sysRoles.push({ roleKey: cfg.nextId('ROLE'), roleName: r.roleName, desc: r.desc, scope: r.scope, builtIn: false, userCount: 0 });
@@ -1249,7 +1432,12 @@ export const api = {
     return mock(cfg.recordOp('删除角色', roleKey, `${name} 已删除，关联账号回落业务查看员`), 200);
   },
   getPermMatrix(): Promise<PermRow[]> {
-    return mock(cfg.permMatrix.map((r) => ({ module: r.module, levels: { ...r.levels } })));
+    return http.get<Record<string, unknown>[]>('/internal/rbac/perm-matrix').then((rows) =>
+      (rows || []).map((r) => ({
+        module: String(r.module ?? ''),
+        levels: { ...((r.perms ?? {}) as Record<string, string>) },
+      })) as PermRow[],
+    );
   },
   savePermMatrix(rows: PermRow[]): Promise<OperationRecord> {
     cfg.permMatrix.length = 0;
@@ -1302,5 +1490,122 @@ export const api = {
   restartPod(podId: string): Promise<OperationRecord> {
     const p = cfg.k8sPods.find((x) => x.podId === podId);
     return mock(cfg.recordOp('重启 Pod', podId, `${p?.service ?? ''}（${p?.ns ?? ''}）滚动重启，副本逐个替换不中断服务`), 200);
+  },
+
+  /* ============ 差异化计价 / 计费结算与对账（招标一-4/一-5） ============ */
+
+  /** 五维费率规则：部门 / 系统 / 业务场景 / 服务类型 / 使用时段 */
+  getPricingRules(): Promise<PricingRule[]> {
+    return http.get<Record<string, unknown>[]>('/internal/pricing/rules').then((rows) =>
+      (rows || []).map((r) => ({
+        ruleCode: String(r.ruleCode ?? ''),
+        ruleName: String(r.ruleName ?? ''),
+        deptId: String(r.deptId ?? ''),
+        appId: String(r.appId ?? ''),
+        scenario: String(r.scenario ?? ''),
+        serviceType: String(r.serviceType ?? ''),
+        modelId: String(r.modelId ?? ''),
+        timeStart: String(r.timeStart ?? ''),
+        timeEnd: String(r.timeEnd ?? ''),
+        inputPrice: Number(r.inputPrice ?? 0),
+        outputPrice: Number(r.outputPrice ?? 0),
+        requestPrice: Number(r.requestPrice ?? 0),
+        priority: Number(r.priority ?? 0),
+        status: Number(r.status ?? 1) === 1 ? 'ACTIVE' : 'DISABLED',
+      })) as PricingRule[],
+    );
+  },
+  savePricingRule(rule: PricingRule): Promise<OperationRecord> {
+    const body = { ...rule, status: rule.status === 'ACTIVE' ? 1 : 0 };
+    const req = rule.ruleCode
+      ? http.put<Record<string, unknown>>(`/internal/pricing/rules/${rule.ruleCode}`, body)
+      : http.post<Record<string, unknown>>('/internal/pricing/rules', body);
+    return req.then(() =>
+      cfg.recordOp('保存计价规则', rule.ruleCode || rule.ruleName,
+        `${rule.ruleName}：输入 ${rule.inputPrice} / 输出 ${rule.outputPrice} 元每 token，优先级 ${rule.priority}`),
+    );
+  },
+  deletePricingRule(ruleCode: string): Promise<OperationRecord> {
+    return http.delete<Record<string, unknown>>(`/internal/pricing/rules/${ruleCode}`).then(() =>
+      cfg.recordOp('删除计价规则', ruleCode, `费率规则 ${ruleCode} 已删除`),
+    );
+  },
+  /** 费率试算：返回命中规则与金额 */
+  simulatePricing(p: {
+    deptId?: string; appId?: string; scenario?: string; serviceType?: string; modelId?: string;
+    promptTokens: number; completionTokens: number;
+  }): Promise<{ amount: number; ruleCode: string; ruleName: string }> {
+    return http.post<Record<string, unknown>>('/internal/pricing/simulate', p).then((r) => ({
+      amount: Number(r.amount ?? 0),
+      ruleCode: String(r.ruleCode ?? ''),
+      ruleName: String(r.ruleName ?? ''),
+    }));
+  },
+  /** 生成账期账单 */
+  generateBills(month?: string): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/billing/generate' + (month ? `?month=${month}` : ''));
+  },
+  /** 锁账：账期封闭 */
+  lockBill(billNo: string): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>(`/internal/billing/bills/${billNo}/lock`);
+  },
+  /** 对账记录 */
+  getReconciliations(month?: string): Promise<Record<string, unknown>[]> {
+    return http.get<Record<string, unknown>[]>('/internal/billing/reconciliations', { month });
+  },
+  reconcileBill(p: { billMonth: string; tenantId: string; upstreamAmount: number }): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/billing/reconciliations', p);
+  },
+
+  /* ============ RBAC 写操作（此前纯内存，现落库） ============ */
+
+  createSysUser(u: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/rbac/users', u);
+  },
+  updateSysUserState(userCode: string, patch: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return http.patch<Record<string, unknown>>(`/internal/rbac/users/${userCode}/state`, patch);
+  },
+  saveRolePermissions(roleCode: string, perms: Record<string, string>): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/rbac/perm-matrix/batch', { roleCode, perms });
+  },
+
+  /* ============ 安全检测（招标二-7） ============ */
+
+  /** 触发一轮异常检测扫描 */
+  runSecurityScan(): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/security/scan');
+  },
+  getDetectRules(): Promise<Record<string, unknown>[]> {
+    return http.get<Record<string, unknown>[]>('/internal/security/detect-rules');
+  },
+  handleAlertAction(alertId: string, status: string, comment?: string): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>(`/internal/security/alerts/${alertId}/handle`, { status, comment });
+  },
+
+  /* ============ 分级采集与算力（招标一-1/一-3） ============ */
+
+  getCollectionSources(): Promise<Record<string, unknown>[]> {
+    return http.get<Record<string, unknown>[]>('/internal/collection/sources');
+  },
+  getCollectionBatches(): Promise<Record<string, unknown>[]> {
+    return http.get<Record<string, unknown>[]>('/internal/collection/batches');
+  },
+  reportComputeMetric(m: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/compute/metrics', m);
+  },
+
+  /* ============ 模型生命周期（版本 / 血缘 / 灰度） ============ */
+
+  getModelVersions(modelId: string): Promise<Record<string, unknown>[]> {
+    return http.get<Record<string, unknown>[]>(`/internal/models/${modelId}/versions`);
+  },
+  getModelLineage(modelId: string): Promise<Record<string, unknown>[]> {
+    return http.get<Record<string, unknown>[]>(`/internal/models/${modelId}/lineage`);
+  },
+  startGrayRelease(p: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/models/releases', p);
+  },
+  rollbackGrayRelease(releaseId: string): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>(`/internal/models/releases/${releaseId}/rollback`);
   },
 };

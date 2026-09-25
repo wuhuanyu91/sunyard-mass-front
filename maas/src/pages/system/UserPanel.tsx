@@ -150,7 +150,7 @@ export default function UserPanel() {
                   <td className="py-2 text-xs text-text-secondary">{u.deptName}</td>
                   <td className="py-2"><span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">{ROLE_LABEL[u.role] ?? u.role}</span></td>
                   <td className="py-2">{u.mfa ? <ShieldCheck size={14} className="text-success" /> : <span className="text-xs text-text-secondary/50">未开启</span>}</td>
-                  <td className="num py-2 text-xs text-text-secondary">{new Date(u.lastLoginAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                  <td className="num py-2 text-xs text-text-secondary">{u.lastLoginAt && !Number.isNaN(Date.parse(u.lastLoginAt)) ? new Date(u.lastLoginAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                   <td className="py-2"><span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_META[u.status].cls}`}>{STATUS_META[u.status].label}</span></td>
                   <td className="py-2">
                     <div className="flex justify-end gap-1.5">

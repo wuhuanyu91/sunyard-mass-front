@@ -1075,6 +1075,24 @@ export interface K8sCluster {
   status: 'HEALTHY' | 'DEGRADED';
 }
 
+/** 差异化计价费率规则（招标一-4/一-5：部门 / 系统 / 业务场景 / 服务类型 / 使用时段 五维） */
+export interface PricingRule {
+  ruleCode: string;
+  ruleName: string;
+  deptId: string; // 空 = 通配
+  appId: string; // 空 = 通配
+  scenario: string; // 业务场景，空 = 通配
+  serviceType: string; // chat / embedding / rerank，空 = 通配
+  modelId: string; // 空 = 通配
+  timeStart: string; // HH:mm，空 = 不限（支持跨夜）
+  timeEnd: string; // HH:mm
+  inputPrice: number; // 元 / token（输入）
+  outputPrice: number; // 元 / token（输出）
+  requestPrice: number; // 元 / 次调用
+  priority: number; // 越大越优先，命中即停
+  status: 'ACTIVE' | 'DISABLED';
+}
+
 /** 推理服务 Pod（模型实例在 K8s 上的运行形态） */
 export interface K8sPod {
   podId: string;
