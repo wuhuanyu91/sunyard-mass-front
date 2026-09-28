@@ -123,6 +123,7 @@ const NAV_TREE: NavGroup[] = [
       { label: '权限配置', to: '/system?tab=perm' },
       { label: '平台监控', to: '/system?tab=monitor' },
       { label: '工单反馈', to: '/system?tab=tickets' },
+      { label: '行内对接', to: '/system?tab=base' },
       { label: '系统参数', to: '/system?tab=params' },
       { label: '操作日志', to: '/system?tab=logs' },
     ],

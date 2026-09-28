@@ -38,7 +38,7 @@ function responseToCamelCase<T>(data: unknown): T {
 }
 
 /** 前端请求 camelCase → 后端 snake_case（仅查询参数使用；请求体保持 camelCase 与后端 body.get("xxxYyy") 读取口径一致） */
-function requestToSnakeCase(data: unknown): unknown {
+export function requestToSnakeCase(data: unknown): unknown {
   return convertKeys(data, camelToSnake);
 }
 

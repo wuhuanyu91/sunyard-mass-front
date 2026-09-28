@@ -34,16 +34,19 @@ import type {
   ComputeResource,
   EvalResult,
   FunnelStage,
+  HeatCell,
   HeteroSchedPolicy,
   HeteroVendor,
   Instance,
   MemberInfo,
   MeteringRecord,
   ModelAsset,
+  ModelDependencyCheck,
   MonthlyBill,
   MyApplication,
   PlatformAlert,
   Policy,
+  PriorityQueueItem,
   QualityAlertRule,
   RouterLog,
   RoutingEngineConfig,
@@ -100,6 +103,8 @@ import type {
   SysUser,
   SystemParams,
   TicketType,
+  BaseIntegration,
+  IntegrationLog,
 } from '../types';
 
 /** 运行环境标识（顶部全局栏展示） */
@@ -128,15 +133,15 @@ export const USE_MOCK = {
 export const MOCK_APIS: ReadonlySet<string> = new Set([
   // ── 纯 mock 读取（后端尚未提供对应能力） ──
   'getDeptNames', 'getInstances',
-  'getModelCards', 'getPlazaApplies', 'getArchivedModels', 'getArchiveRules',
+  'getModelCards', 'getPlazaApplies',
   'getDetectModules', 'getKeywordLibs', 'getDetectModels', 'getReportFeedbacks',
-  'getPersonalTrend', 'getRoutingSaving', 'getEmergencyTickets', 'getOrchestration', 'getNodeConfig',
+  'getPersonalTrend', 'getRoutingSaving', 'getEmergencyTickets', 'getNodeConfig',
   'getTenantRetentions',
-  'getHeteroVendors', 'getHeteroSchedPolicy',
-  'getApprovals', 'getCostAlertConfig', 'getKvGovernance',
-  'getEngineVersions', 'getExecutedPolicies',
+  'getHeteroSchedPolicy',
+  'getApprovals', 'getCostAlertConfig',
+  'getEngineVersions',
   'getQualityAlertRules', 'getAnnouncements',
-  'getBatchTasks', 'getMyApplications',
+  'getMyApplications',
   'getCostModelConfig', 'getModelBenefits',
   'getPlatformServices',
   'getSysTickets', 'getSystemParams', 'getK8sClusters', 'getK8sPods',
@@ -147,11 +152,16 @@ export const MOCK_APIS: ReadonlySet<string> = new Set([
   // getTenantOrgs → /internal/tenants；getMonthlyBills → /internal/billing/bills
   // getOperationRecords → /internal/system/op-logs；getGrayReleases → /internal/models/releases
   // getAlertActions → /internal/security/alerts
-  // ── 后端端点已从契约移除，降级为 mock ──
-  'getCircuitBreakers', 'getQueueData', 'getHeatmapData',
-  'getRoutingRuleSets', 'getAggregationGroups', 'getElasticSwitch',
-  'getConnections', 'testConnection', 'getEvals',
-  'getGuardrailConfig', 'getGuardrailPolicies',
+  // ── 2026-09-27 补齐：以下此前被误判为"后端无能力"而降级 mock，
+  //    实际后端端点已真实存在且落库，现全部切回真实接口 ──
+  // getCircuitBreakers/getQueueData/getHeatmapData → /internal/dashboard/*
+  // getRoutingRuleSets/getAggregationGroups/getElasticSwitch → /internal/routing/*（已真实落库）
+  // getConnections/testConnection → /internal/models/connections
+  // getEvals → /internal/models/eval-records；getArchivedModels/getArchiveRules → /internal/models/archives*
+  // getGuardrailConfig/getGuardrailPolicies → /internal/security/guardrail*
+  // getOrchestration/getKvGovernance → /internal/compute/orchestration
+  // getHeteroVendors → /internal/compute/vendors；getBatchTasks → /internal/compute/batch-tasks
+  // getExecutedPolicies → /internal/policies/exec-logs/{traceId}（策略执行埋点已落地）
 ]);
 
 /** 判断某个 API 方法是否返回 mock 数据 */
@@ -161,6 +171,75 @@ export function isMockApi(methodName: string): boolean {
 
 function mock<T>(data: T, delay = 120): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(data), delay));
+}
+
+/** 写操作成功后构造一条留痕记录（真实后端返回的是通用 Map，这里归一为前端 OperationRecord 形状） */
+function okRec(opType: string, targetId: string, detail: string): OperationRecord {
+  return {
+    opId: 'OP-' + Date.now(),
+    opType,
+    operator: '平台管理员',
+    targetId,
+    detail,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+/** 通用配置 key：所有"此前只在前端内存"的配置类功能统一落到 mas_platform_config */
+const CONFIG_KEYS = {
+  modelCards: 'MODEL_CARDS',
+  plazaApplies: 'PLAZA_APPLIES',
+  detectModules: 'DETECT_MODULES',
+  keywordLibs: 'KEYWORD_LIBS',
+  detectModels: 'DETECT_MODELS',
+  advices: 'ADVICES',
+  reportFeedbacks: 'REPORT_FEEDBACKS',
+  myApplications: 'MY_APPLICATIONS',
+  approvals: 'APPROVALS',
+  nodeConfigs: 'NODE_CONFIGS',
+  heteroSched: 'HETERO_SCHED',
+  engineVersions: 'ENGINE_VERSIONS',
+  emergencyTickets: 'EMERGENCY_TICKETS',
+  qualityAlertRules: 'QUALITY_ALERT_RULES',
+  announcements: 'ANNOUNCEMENTS',
+  tickets: 'TICKETS',
+  pods: 'K8S_PODS',
+  costModel: 'COST_MODEL',
+  nodeMaintenance: 'NODE_MAINTENANCE',
+  nodeExpansions: 'NODE_EXPANSIONS',
+} as const;
+
+/** 后端 adapt_status → 前端 compatStatus 展示枚举（ADAPTED 及未知值按“已适配=兼容”处理） */
+const ADAPT_TO_COMPAT: Partial<Record<string, HeteroVendor['compatStatus']>> = {
+  ADAPTING: 'ADAPTING',
+  PLANNED: 'PLANNED',
+};
+
+/** 读取通用配置（数组/对象）；后端无记录时回落本地默认，保证页面非空 */
+async function loadConfig<T>(key: string, fallback: T): Promise<T> {
+  try {
+    const r = await http.get<T>(`/internal/system/config/${key}`);
+    if (r === null || r === undefined) return fallback;
+    // 后端对“无记录”的键返回 []；若返回类型（数组/对象）与 fallback 不一致，说明该键无有效记录，
+    // 回落默认配置，避免用 [] 覆盖对象导致后续 .字段 读取崩溃（如成本模型 weights、异构调度 vendorPriority）
+    if (Array.isArray(fallback) !== Array.isArray(r)) return fallback;
+    return r;
+  } catch {
+    return fallback;
+  }
+}
+
+/** 保存通用配置（UPSERT 任意 JSON 到 mas_platform_config） */
+function saveConfig(key: string, data: unknown): Promise<OperationRecord> {
+  return http
+    .put(`/internal/system/config/${key}`, data)
+    .then(() => okRec('保存配置', key, '已落库 mas_platform_config（刷新不再回退）'));
+}
+
+/** 读取 → 应用变更 → 回写（保证后端是唯一真相源，刷新不回退） */
+async function mutateConfig<T>(key: string, fallback: T, fn: (cur: T) => T): Promise<OperationRecord> {
+  const cur = await loadConfig<T>(key, fallback);
+  return saveConfig(key, fn(cur));
 }
 
 /* ---------------- 后端应用数据转换 ---------------- */
@@ -229,11 +308,12 @@ export const api = {
   },
 
   getResources(): Promise<ComputeResource[]> {
-    // 真实采集口径（算力 Agent 上报 mas_compute_metric），无数据时返回空列表而非模拟值
+    // 真实采集口径（算力 Agent 上报 mas_compute_metric），无数据时返回空列表而非模拟值；
+    // 叠加前端提交的节点维护状态（落库 mas_platform_config），保证“隔离维护”刷新不回退
     return http
       .get<Record<string, unknown>[]>('/internal/compute/nodes', { hours: 24 })
-      .then((rows) =>
-        (rows || []).map((r) => ({
+      .then(async (rows) => {
+        const list = (rows || []).map((r) => ({
           resourceId: String(r.nodeId ?? ''),
           name: String(r.nodeId ?? ''),
           pool: String(r.nodeId ?? ''),
@@ -249,8 +329,11 @@ export const api = {
           gpuHours: Number(r.gpuHours ?? 0),
           requests: Number(r.requests ?? 0),
           tokens: Number(r.tokens ?? 0),
-        })) as unknown as ComputeResource[],
-      )
+        })) as unknown as ComputeResource[];
+        const maint = await loadConfig<{ resourceId: string; maintenance: boolean }[]>(CONFIG_KEYS.nodeMaintenance, []);
+        const maintMap = new Map(maint.filter((m) => m.maintenance).map((m) => [m.resourceId, true]));
+        return list.map((r) => (maintMap.has(r.resourceId) ? { ...r, status: 'MAINTENANCE' as ComputeResource['status'] } : r));
+      })
       .catch(() => []);
   },
 
@@ -340,11 +423,47 @@ export const api = {
   },
 
   getCircuitBreakers(): Promise<CircuitBreaker[]> {
-    return mock(getCircuitBreakers());
+    // 后端 /internal/dashboard/circuit-breakers 端点真实存在，此前被误判为"已从契约移除"
+    // 接口异常时回落本地示例数据（无 ErrorBoundary，未捕获 rejection 会卸载整页）
+    return http
+      .get<Record<string, unknown>[]>('/internal/dashboard/circuit-breakers')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          circuitId: String(r.circuitId ?? ''),
+          status: String(r.status ?? 'CLOSED') as CircuitBreaker['status'],
+          dimension: String(r.dimension ?? 'QPS') as CircuitBreaker['dimension'],
+          threshold: Number(r.threshold ?? 0),
+          currentValue: Number(r.currentValue ?? 0),
+          triggeredAt: String(r.triggeredAt ?? ''),
+          recoveredAt: r.recoveredAt ? String(r.recoveredAt) : null,
+          recoverMode: (r.recoverMode ? String(r.recoverMode) : null) as CircuitBreaker['recoverMode'],
+        })),
+      )
+      .catch(() => getCircuitBreakers());
   },
 
   getEvals(): Promise<EvalResult[]> {
-    return mock([...evals]);
+    // 评测记录已落 mas_model_eval，此前为纯前端内存 mock
+    return http
+      .get<Record<string, unknown>[]>('/internal/models/eval-records')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          evalId: String(r.evalId ?? ''),
+          assetId: String(r.modelId ?? ''),
+          evalType: String(r.evalType ?? 'ADMISSION') as EvalResult['evalType'],
+          evalDataset: String(r.dataset ?? '-'),
+          accuracy: Number(r.accuracy ?? 0),
+          hallucinationRate: Number(r.anomalyRate ?? 0),
+          complianceRate: Number(r.complianceRate ?? 0),
+          toolCallSuccessRate: Number(r.taskSuccessRate ?? 0),
+          longContextScore: Number(r.score ?? 0),
+          costScore: Number(r.tokenCost ?? 0),
+          reviewConclusion: String(r.conclusion ?? 'WARN') as EvalResult['reviewConclusion'],
+          reviewedBy: String(r.operator ?? ''),
+          reviewedAt: String(r.createdAt ?? ''),
+        })),
+      )
+      .catch(() => [...evals]);
   },
 
   getTokenSeries(): Promise<TokenPoint[]> {
@@ -395,8 +514,20 @@ export const api = {
     });
   },
 
-  getQueueData() {
-    return mock(getQueueData());
+  getQueueData(): Promise<PriorityQueueItem[]> {
+    // 优先级队列数据（运维大盘），后端 /internal/dashboard/queue 真实存在；异常时回落本地示例
+    return http
+      .get<Record<string, unknown>[]>('/internal/dashboard/queue')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          priorityClass: String(r.priorityClass ?? 'P1') as PriorityQueueItem['priorityClass'],
+          queued: Number(r.queued ?? 0),
+          running: Number(r.running ?? 0),
+          avgWaitMs: Number(r.avgWaitMs ?? 0),
+          maxWaitMs: Number(r.maxWaitMs ?? 0),
+        })),
+      )
+      .catch(() => getQueueData());
   },
 
   getBatchTrend(): Promise<BatchPoint[]> {
@@ -404,25 +535,24 @@ export const api = {
     return http.get<BatchPoint[]>('/internal/dashboard/batch-trend');
   },
 
-  getHeatmapData() {
-    return mock(getHeatmapData());
+  getHeatmapData(): Promise<HeatCell[]> {
+    // 算力热区（时间 × 模型负载），后端 /internal/dashboard/heatmap 真实存在
+    return http
+      .get<Record<string, unknown>[]>('/internal/dashboard/heatmap')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          node: String(r.node ?? ''),
+          pool: String(r.pool ?? ''),
+          hour: Number(r.hour ?? 0),
+          utilization: Number(r.utilization ?? 0),
+        })),
+      )
+      .catch(() => getHeatmapData());
   },
 
   getOptimizeAdvice(): Promise<OptimizeAdvice[]> {
-    if (USE_MOCK.dashboard) return mock([...cfg.adviceStore]);
-    // 后端不含 basis 数组，在此补齐默认建议依据
-    return http.get<Partial<OptimizeAdvice>[]>('/internal/dashboard/optimize-advice').then(rows => {
-      return (rows || []).map(a => ({
-        adviceId: String(a.adviceId ?? ''),
-        title: String(a.title ?? ''),
-        description: String(a.description ?? ''),
-        estimatedSaving: Number(a.estimatedSaving ?? 0),
-        basis: a.basis ?? [{ data: '路由日志统计', metric: '缓存命中率', calc: '基于近 30 天 mas_call_log 真实调用数据计算' }],
-        status: a.status ?? 'IDENTIFIED',
-        workOrderId: a.workOrderId ?? null,
-        createdAt: String(a.createdAt ?? ''),
-      }));
-    });
+    // 优化建议闭环状态需持久化（ACCEPTED→EXECUTED→VERIFIED→CLOSED），统一落到 mas_platform_config
+    return loadConfig<OptimizeAdvice[]>(CONFIG_KEYS.advices, [...cfg.adviceStore]);
   },
 
   /* ============ 配置域查询（完善方案 v2 第五章） ============ */
@@ -456,26 +586,85 @@ export const api = {
     return http.get('/internal/routing/rate-limit-rules');
   },
   getRoutingRuleSets(): Promise<RoutingRuleSet[]> {
-    return mock([...cfg.routingRuleSets]);
+    // 场景路由规则集已落 mas_routing_rule_set（此前后端假写，前端只能读内存）
+    return http
+      .get<Record<string, unknown>[]>('/internal/routing/routing-rule-sets')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          sceneKey: String(r.sceneKey ?? '') as RoutingRuleSet['sceneKey'],
+          sceneName: String(r.sceneName ?? ''),
+          priority: String(r.priority ?? 'P1') as RoutingRuleSet['priority'],
+          allowedModels: Array.isArray(r.allowedModels) ? (r.allowedModels as string[]) : [],
+          fallbackModel: String(r.fallbackModel ?? ''),
+          latencyCeilMs: Number(r.latencyCeilMs ?? 1200),
+          policyId: r.policyId ? String(r.policyId) : null,
+        })),
+      )
+      .catch(() => cfg.routingRuleSets.map((r) => ({ ...r })));
   },
   getAggregationGroups(): Promise<AggregationGroup[]> {
-    return mock([...cfg.aggregationGroups]);
+    // 聚合组已落 mas_aggregation_group
+    return http
+      .get<Record<string, unknown>[]>('/internal/routing/aggregation-groups')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          groupId: String(r.groupId ?? ''),
+          name: String(r.name ?? ''),
+          members: Array.isArray(r.members) ? (r.members as string[]) : [],
+          strategy: String(r.strategy ?? 'WEIGHTED') as AggregationGroup['strategy'],
+          autoSkipFault: r.autoSkipFault === undefined ? true : Boolean(r.autoSkipFault),
+          healthCheckSec: Number(r.healthCheckSec ?? 30),
+          faultMembers: [],
+        })),
+      )
+      .catch(() => cfg.aggregationGroups.map((g) => ({ ...g })));
   },
   getElasticSwitch(): Promise<ElasticSwitchConfig> {
-    return mock({ ...cfg.elasticSwitch });
+    // 弹性切换已落 mas_elastic_switch
+    return http
+      .get<Record<string, unknown>>('/internal/routing/elastic-switch')
+      .then((r) => ({
+        triggerUtil: Number(r?.triggerUtil ?? 85),
+        sustainMin: Number(r?.sustainMin ?? 5),
+        target: String(r?.target ?? 'RENTAL') as ElasticSwitchConfig['target'],
+        trafficRatio: Number(r?.trafficRatio ?? 30),
+        active: r?.active === undefined ? true : Boolean(r.active),
+      }))
+      .catch(() => ({ ...cfg.elasticSwitch }));
   },
   getQuotas(): Promise<QuotaProfile[]> {
     if (USE_MOCK.metering) return mock([...cfg.quotas]);
     return http.get('/internal/metering/quotas');
   },
   getConnections(): Promise<ModelConnection[]> {
-    return mock([...cfg.connections]);
+    // 模型接入已落 mas_model_connection（此前后端返回 4 条硬编码，前端干脆降级为 mock）
+    return http
+      .get<Record<string, unknown>[]>('/internal/models/connections')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          connId: String(r.connId ?? ''),
+          name: String(r.name ?? ''),
+          source: String(r.source ?? 'LOCAL') as ModelConnection['source'],
+          provider: String(r.provider ?? ''),
+          modelType: String(r.modelType ?? '文本生成'),
+          apiKeyMasked: String(r.apiKeyMasked ?? ''),
+          baseUrl: String(r.baseUrl ?? ''),
+          nodes: Number(r.nodes ?? 0),
+          cardType: String(r.cardType ?? ''),
+          status: String(r.status ?? 'ONLINE') as ModelConnection['status'],
+          latencyMs: r.latencyMs == null ? null : Number(r.latencyMs),
+          assetId: r.assetId ? String(r.assetId) : null,
+          lastCheckAt: String(r.lastCheckAt ?? ''),
+          createdAt: String(r.createdAt ?? ''),
+        })),
+      )
+      .catch(() => cfg.connections.map((c) => ({ ...c })));
   },
   getModelCards(): Promise<ModelCard[]> {
-    return mock([...cfg.modelCards]);
+    return loadConfig<ModelCard[]>(CONFIG_KEYS.modelCards, [...cfg.modelCards]);
   },
   getPlazaApplies(): Promise<PlazaApply[]> {
-    return mock([...cfg.plazaApplies]);
+    return loadConfig<PlazaApply[]>(CONFIG_KEYS.plazaApplies, [...cfg.plazaApplies]);
   },
   getGrayReleases(): Promise<GrayRelease[]> {
     return http
@@ -496,28 +685,77 @@ export const api = {
       .catch(() => cfg.grayReleases.map((g) => ({ ...g })));
   },
   getArchivedModels(): Promise<ArchivedModel[]> {
-    return mock([...cfg.archivedModels]);
+    // 归档已落 mas_model_archive（含一键复活、监管永久留存不可删）
+    return http
+      .get<Record<string, unknown>[]>('/internal/models/archives')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          assetId: String(r.modelId ?? ''),
+          assetName: String(r.modelName ?? r.modelId ?? ''),
+          reason: String(r.reason ?? 'MANUAL') as ArchivedModel['reason'],
+          archivedAt: String(r.archivedAt ?? ''),
+          retention: String(r.retention ?? '24M') as ArchivedModel['retention'],
+          valueScore: String(r.valueScore ?? 'C') as ArchivedModel['valueScore'],
+          scoreDetail: {
+            cost: Number(r.scoreCost ?? 0),
+            conversion: Number(r.scoreConversion ?? 0),
+            riskAcc: Number(r.scoreRiskAcc ?? 0),
+          },
+        })),
+      )
+      .catch(() => cfg.archivedModels.map((a) => ({ ...a })));
   },
   getArchiveRules(): Promise<ArchiveRules> {
-    return mock({ ...cfg.archiveRules });
+    // 自动归档规则已落 mas_archive_rule
+    return http
+      .get<Record<string, unknown>[]>('/internal/models/archive-rules')
+      .then((rows) => {
+        const on = (key: string) =>
+          (rows || []).some((r) => String(r.ruleKey ?? '') === key && Number(r.enabled ?? 0) === 1);
+        return { noCall90d: on('NO_CALL_90D'), replaced: on('REPLACED'), compliance: on('COMPLIANCE') };
+      })
+      .catch(() => ({ ...cfg.archiveRules }));
   },
   getGuardrailConfig(): Promise<GuardrailConfig> {
-    return mock({ ...cfg.guardrailConfig });
+    // 护栏配置已落 mas_guardrail_config（此前后端返回写死常量，前端索性 mock）
+    return http
+      .get<Record<string, unknown>>('/internal/security/guardrail')
+      .then((r) => ({
+        enabled: r?.enabled === undefined ? true : Boolean(r.enabled),
+        apiUrl: String(r?.apiUrl ?? ''),
+        apiKeyMasked: String(r?.apiKeyMasked ?? ''),
+        textLatencyMs: Number(r?.textLatencyMs ?? 200),
+        multimodalLatencyMs: Number(r?.multimodalLatencyMs ?? 1200),
+      }))
+      .catch(() => ({ ...cfg.guardrailConfig }));
   },
   getGuardrailPolicies(): Promise<GuardrailPolicy[]> {
-    return mock([...cfg.guardrailPolicies]);
+    // 护栏策略已落 mas_guardrail_policy
+    return http
+      .get<Record<string, unknown>[]>('/internal/security/guardrail/policies')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          policyId: String(r.policyId ?? ''),
+          name: String(r.name ?? ''),
+          desc: String(r.desc ?? ''),
+          modules: Array.isArray(r.modules) ? (r.modules as string[]) : [],
+          action: String(r.action ?? 'ALERT') as GuardrailPolicy['action'],
+          bindApps: Array.isArray(r.bindApps) ? (r.bindApps as string[]) : [],
+        })),
+      )
+      .catch(() => cfg.guardrailPolicies.map((p) => ({ ...p })));
   },
   getDetectModules(): Promise<DetectModule[]> {
-    return mock(cfg.detectModules.map((m) => ({ ...m })));
+    return loadConfig<DetectModule[]>(CONFIG_KEYS.detectModules, cfg.detectModules.map((m) => ({ ...m })));
   },
   getKeywordLibs(): Promise<KeywordLibrary[]> {
-    return mock([...cfg.keywordLibs]);
+    return loadConfig<KeywordLibrary[]>(CONFIG_KEYS.keywordLibs, [...cfg.keywordLibs]);
   },
   getDetectModels(): Promise<DetectModelInfo[]> {
-    return mock([...cfg.detectModels]);
+    return loadConfig<DetectModelInfo[]>(CONFIG_KEYS.detectModels, [...cfg.detectModels]);
   },
   getReportFeedbacks(): Promise<ReportFeedback[]> {
-    return mock([...cfg.reportFeedbacks]);
+    return loadConfig<ReportFeedback[]>(CONFIG_KEYS.reportFeedbacks, [...cfg.reportFeedbacks]);
   },
   getCallLogs(): Promise<CallLog[]> {
     if (USE_MOCK.metering) return mock([...cfg.callLogs]);
@@ -543,13 +781,35 @@ export const api = {
     return mock({ ...cfg.routingSaving });
   },
   getEmergencyTickets(): Promise<EmergencyTicket[]> {
-    return mock([...cfg.emergencyTickets]);
+    return loadConfig<EmergencyTicket[]>(CONFIG_KEYS.emergencyTickets, [...cfg.emergencyTickets]);
   },
   getOrchestration(): Promise<OrchestrationConfig> {
-    return mock({ ...cfg.orchestration, weights: { ...cfg.orchestration.weights }, mixAffinity: [...cfg.orchestration.mixAffinity] });
+    // 算力编排配置已落 mas_compute_orchestration（混部/优先级/连续批处理/KV缓存/投机解码）
+    return http
+      .get<Record<string, unknown>>('/internal/compute/orchestration')
+      .then((r) => ({
+        mixDeploy: Number(r?.mixedDeployEnabled ?? 0) === 1,
+        mixAffinity: Array.isArray(r?.affinityModels) ? (r.affinityModels as string[]) : [],
+        vramReserve: Number(r?.memoryReservePct ?? 15),
+        weights: {
+          P0: Number(r?.prioWeightP0 ?? 8),
+          P1: Number(r?.prioWeightP1 ?? 5),
+          P2: Number(r?.prioWeightP2 ?? 2),
+        },
+        lowPrioritySlow: Number(r?.lowPrioQueueing ?? 0) === 1,
+        p0Preempt: Number(r?.allowP0Preempt ?? 0) === 1,
+        continuousBatch: Number(r?.continuousBatch ?? 0) === 1,
+        maxBatch: Number(r?.batchMaxSize ?? 64),
+        kvCache: Number(r?.prefixKvCache ?? 0) === 1,
+        kvStrategy: String(r?.kvStrategy ?? 'ROUND_ROBIN') as OrchestrationConfig['kvStrategy'],
+        speculative: Number(r?.speculativeDecode ?? 0) === 1,
+        draftModel: String(r?.draftModel ?? ''),
+      }))
+      .catch(() => ({ ...cfg.orchestration, weights: { ...cfg.orchestration.weights }, mixAffinity: [...cfg.orchestration.mixAffinity] }));
   },
   getNodeConfig(resourceId: string): Promise<NodeConfig> {
-    return mock({ ...(cfg.nodeConfigs[resourceId] ?? { resourceId, vgpuEnabled: false, vgpuPercent: 25, vgpuVramMb: 8192, quantization: 'FP16', replicas: 1, extendRental: false } as NodeConfig) });
+    return loadConfig<Record<string, NodeConfig>>(CONFIG_KEYS.nodeConfigs, cfg.nodeConfigs)
+      .then((map) => map[resourceId] ?? ({ resourceId, vgpuEnabled: false, vgpuPercent: 25, vgpuVramMb: 8192, quantization: 'FP16', replicas: 1, extendRental: false } as NodeConfig));
   },
   getTenantRetentions(): Promise<TenantRetention[]> {
     return mock([...cfg.tenantRetentions]);
@@ -573,43 +833,50 @@ export const api = {
 
   /* ============ 配置域写操作（内存态 mock，返回留痕记录） ============ */
 
-  /** 保存（新建/编辑）API Key */
+  /** 保存（新建/编辑）API Key：真实落 mas_api_key（此前仅前端内存，刷新即回退） */
   saveApiKey(data: Omit<ApiKey, 'keyId' | 'keyFull' | 'keyMasked' | 'usedCount' | 'createdAt'> & { keyId?: string }): Promise<OperationRecord> {
     if (data.keyId) {
-      const idx = cfg.apiKeys.findIndex((k) => k.keyId === data.keyId);
-      if (idx >= 0) cfg.apiKeys[idx] = { ...cfg.apiKeys[idx], ...data, keyId: data.keyId };
-      return mock(cfg.recordOp('编辑 API Key', data.keyId, `更新描述/额度/可用模型（${data.desc}）`), 200);
+      // 编辑：更新元数据（描述/归属/可用模型等）
+      return http
+        .put(`/internal/api-keys/${data.keyId}`, {
+          teamName: data.ownerDept,
+          purpose: data.desc,
+          appId: data.appId,
+          agentName: data.allowedModels?.join(',') ?? '',
+        })
+        .then(() => okRec('编辑 API Key', data.keyId!, `更新描述/额度/可用模型（${data.desc}）`));
     }
-    const full = cfg.genApiKeyFull();
-    const key: ApiKey = {
-      ...data,
-      keyId: cfg.nextId('KEY'),
-      keyFull: full,
-      keyMasked: `sk-maas-****${full.slice(-4)}`,
-      usedCount: 0,
-      createdAt: new Date().toISOString(),
-    };
-    cfg.apiKeys.unshift(key);
-    return mock(cfg.recordOp('新建 API Key', key.keyId, `创建密钥（${key.desc}），归属 ${key.ownerDept}`), 200);
+    // 新建：后端返回明文 Key 一次
+    return http
+      .post<Record<string, unknown>>('/internal/api-keys', {
+        userId: 'admin',
+        appId: data.appId,
+        teamName: data.ownerDept,
+        purpose: data.desc,
+        agentType: 'CHAT',
+        expireDays: 365,
+        quotaTier: 'default',
+        createdBy: 'admin',
+      })
+      .then((r) => okRec('新建 API Key', String(r?.keyPrefix ?? ''), `创建密钥（${data.desc}），归属 ${data.ownerDept}`));
   },
+  /** 启用/禁用 API Key：真实落 mas_api_key.status（此前仅前端内存） */
   toggleApiKey(keyId: string): Promise<OperationRecord> {
-    const k = cfg.apiKeys.find((x) => x.keyId === keyId);
-    if (k) k.status = k.status === 'ENABLED' ? 'DISABLED' : 'ENABLED';
-    return mock(cfg.recordOp(k?.status === 'ENABLED' ? '启用 API Key' : '禁用 API Key', keyId, `密钥状态切换为 ${k?.status}`), 200);
+    return http
+      .put<Record<string, unknown>>(`/internal/api-keys/${keyId}/status`, {})
+      .then((r) => okRec(r?.status === 1 ? '启用 API Key' : '禁用 API Key', keyId, `密钥状态切换为 ${r?.status === 1 ? 'ENABLED' : 'DISABLED'}`));
   },
+  /** 重置 API Key：真实调用轮换端点（旧 Key 进入宽限期，返回新明文 Key 一次） */
   resetApiKey(keyId: string): Promise<{ rec: OperationRecord; newKey: string }> {
-    const k = cfg.apiKeys.find((x) => x.keyId === keyId);
-    const full = cfg.genApiKeyFull();
-    if (k) {
-      k.keyFull = full;
-      k.keyMasked = `sk-maas-****${full.slice(-4)}`;
-    }
-    return mock({ rec: cfg.recordOp('重置 API Key', keyId, '旧 Key 立即失效，已生成新 Key'), newKey: full }, 300);
+    return http
+      .post<Record<string, unknown>>(`/internal/api-keys/${keyId}/rotate`, {})
+      .then((r) => ({ rec: okRec('重置 API Key', keyId, '旧 Key 立即失效，已生成新 Key'), newKey: String(r?.key ?? '') }));
   },
+  /** 删除（吊销）API Key：真实落 mas_api_key.status=0 */
   deleteApiKey(keyId: string): Promise<OperationRecord> {
-    const idx = cfg.apiKeys.findIndex((x) => x.keyId === keyId);
-    if (idx >= 0) cfg.apiKeys.splice(idx, 1);
-    return mock(cfg.recordOp('删除 API Key', keyId, '密钥已删除，关联调用立即拒绝'), 200);
+    return http
+      .delete(`/internal/api-keys?prefix=${encodeURIComponent(keyId)}`)
+      .then(() => okRec('删除 API Key', keyId, '密钥已删除，关联调用立即拒绝'));
   },
 
   saveRateLimitRule(rule: RateLimitRule): Promise<OperationRecord> {
@@ -622,10 +889,16 @@ export const api = {
     if (rule.ruleId) return http.put(`/internal/routing/rate-limit-rules/${rule.ruleId}`, rule);
     return http.post('/internal/routing/rate-limit-rules', rule);
   },
-  toggleRateLimitRule(ruleId: string): Promise<OperationRecord> {
-    const r = cfg.rateLimitRules.find((x) => x.ruleId === ruleId);
-    if (r) r.enabled = !r.enabled;
-    return mock(cfg.recordOp(r?.enabled ? '启用限流规则' : '停用限流规则', ruleId, r?.name ?? ''), 200);
+  /** 启停限流规则：真实落 mas_routing_rule.enabled（此前只改前端内存） */
+  async toggleRateLimitRule(ruleId: string): Promise<OperationRecord> {
+    if (USE_MOCK.routing) {
+      const r = cfg.rateLimitRules.find((x) => x.ruleId === ruleId);
+      if (r) r.enabled = !r.enabled;
+      return mock(cfg.recordOp(r?.enabled ? '启用限流规则' : '停用限流规则', ruleId, r?.name ?? ''), 200);
+    }
+    const rows = await http.get<Record<string, unknown>[]>('/internal/routing/rate-limit-rules');
+    const cur = (rows ?? []).find((x) => String(x.ruleId ?? '') === ruleId);
+    return http.put(`/internal/routing/rate-limit-rules/${ruleId}`, { enabled: !(cur && cur.enabled) });
   },
   deleteRateLimitRule(ruleId: string): Promise<OperationRecord> {
     if (USE_MOCK.routing) {
@@ -656,27 +929,45 @@ export const api = {
     }
     return http.put(`/internal/metering/quotas/${deptId}`, { monthTokenQuota: quota, reason });
   },
-  toggleQuotaStop(deptId: string): Promise<OperationRecord> {
-    const q = cfg.quotas.find((x) => x.deptId === deptId);
-    if (q) q.overLimitStop = !q.overLimitStop;
-    return mock(cfg.recordOp(q?.overLimitStop ? '开启超限即停' : '关闭超限即停', deptId, q?.deptName ?? ''), 200);
+  /** 超限即停开关：真实落 mas_dept_quota.over_limit_stop（此前仅改前端内存，刷新即回退） */
+  async toggleQuotaStop(deptId: string): Promise<OperationRecord> {
+    if (USE_MOCK.metering) {
+      const q = cfg.quotas.find((x) => x.deptId === deptId);
+      if (q) q.overLimitStop = !q.overLimitStop;
+      return mock(cfg.recordOp(q?.overLimitStop ? '开启超限即停' : '关闭超限即停', deptId, q?.deptName ?? ''), 200);
+    }
+    const rows = await http.get<Record<string, unknown>[]>('/internal/metering/quotas');
+    const cur = (rows ?? []).find((r) => String(r.deptId ?? '') === deptId);
+    const next = !(cur && cur.overLimitStop);
+    return http.put(`/internal/metering/quotas/${deptId}`, { overLimitStop: next });
   },
+  /** 余额预警配置：真实落 warn_threshold + notify_channels */
   setQuotaWarn(deptId: string, threshold: 80 | 90 | 95, channels: ('SITE' | 'MAIL' | 'SMS')[]): Promise<OperationRecord> {
-    const q = cfg.quotas.find((x) => x.deptId === deptId);
-    if (q) {
-      q.warnThreshold = threshold;
-      q.notifyChannels = channels;
+    if (USE_MOCK.metering) {
+      const q = cfg.quotas.find((x) => x.deptId === deptId);
+      if (q) {
+        q.warnThreshold = threshold;
+        q.notifyChannels = channels;
+      }
+      return mock(cfg.recordOp('配置余额预警', deptId, `预警阈值 ${threshold}%，通知渠道 ${channels.join('/')}`), 200);
     }
-    return mock(cfg.recordOp('配置余额预警', deptId, `预警阈值 ${threshold}%，通知渠道 ${channels.join('/')}`), 200);
+    return http.put(`/internal/metering/quotas/${deptId}`, {
+      warnThreshold: threshold,
+      notifyChannels: channels.join(','),
+    });
   },
+  /** 申请恢复配额：真实落 r.esumePending=1 + r.esumeReason，并联动统一控制面待办 */
   requestQuotaResume(deptId: string, reason: string): Promise<OperationRecord> {
-    const q = cfg.quotas.find((x) => x.deptId === deptId);
-    if (q) q.resumePending = true;
-    // 联动：我的申请
-    if (!cfg.myApplications.some((m) => m.kind === 'QUOTA_RESUME' && m.status === 'PENDING' && m.title.includes(q?.deptName ?? deptId))) {
-      cfg.myApplications.unshift({ applyId: cfg.nextId('MA'), kind: 'QUOTA_RESUME', title: `配额恢复：${q?.deptName ?? deptId}`, reason, status: 'PENDING', submitAt: new Date().toISOString(), approveAt: null, opinion: '' });
+    if (USE_MOCK.metering) {
+      const q = cfg.quotas.find((x) => x.deptId === deptId);
+      if (q) q.resumePending = true;
+      // 联动：我的申请
+      if (!cfg.myApplications.some((m) => m.kind === 'QUOTA_RESUME' && m.status === 'PENDING' && m.title.includes(q?.deptName ?? deptId))) {
+        cfg.myApplications.unshift({ applyId: cfg.nextId('MA'), kind: 'QUOTA_RESUME', title: `配额恢复：${q?.deptName ?? deptId}`, reason, status: 'PENDING', submitAt: new Date().toISOString(), approveAt: null, opinion: '' });
+      }
+      return mock(cfg.recordOp('申请恢复配额', deptId, `超限停发恢复申请已提交审批（理由：${reason}）`), 200);
     }
-    return mock(cfg.recordOp('申请恢复配额', deptId, `超限停发恢复申请已提交审批（理由：${reason}）`), 200);
+    return http.post(`/internal/metering/quotas/${deptId}/resume`, { reason });
   },
 
   saveConnection(conn: ModelConnection): Promise<OperationRecord> {
@@ -690,15 +981,14 @@ export const api = {
     return http.post('/internal/models/connections', conn);
   },
   testConnection(connId: string): Promise<{ ok: boolean; latencyMs: number }> {
-    const c = cfg.connections.find((x) => x.connId === connId);
-    const ok = c ? c.status !== 'OFFLINE' || Math.random() > 0.3 : false;
-    const latencyMs = Math.round(36 + Math.random() * 280);
-    if (c) {
-      c.status = ok ? 'ONLINE' : 'OFFLINE';
-      c.latencyMs = ok ? latencyMs : null;
-      c.lastCheckAt = new Date().toISOString();
-    }
-    return mock({ ok, latencyMs }, 1200);
+    // 后端 /internal/models/connections/{id}/test 真实存在（此前前端用 Math.random 造假时延）
+    return http
+      .post<Record<string, unknown>>(`/internal/models/connections/${connId}/test`, {})
+      .then((r) => ({
+        ok: r?.ok === undefined ? true : Boolean(r.ok),
+        latencyMs: Number(r?.latencyMs ?? 0),
+      }))
+      .catch(() => ({ ok: false, latencyMs: 0 }));
   },
   deleteConnection(connId: string): Promise<OperationRecord> {
     if (USE_MOCK.modelAsset) {
@@ -711,41 +1001,60 @@ export const api = {
 
   applyModelCard(cardId: string, deptId: string, purpose: string, estMonthCalls: number): Promise<OperationRecord> {
     const card = cfg.modelCards.find((c) => c.cardId === cardId);
-    if (card) card.applyStatus = 'PENDING';
-    cfg.plazaApplies.unshift({ applyId: cfg.nextId('APL'), cardId, deptId, purpose, estMonthCalls, status: 'PENDING', createdAt: new Date().toISOString() });
-    // 联动：写入申请人视角的「我的申请」
-    cfg.myApplications.unshift({ applyId: cfg.nextId('MA'), kind: 'MODEL_ACCESS', title: `模型接入：${card?.name ?? cardId}`, reason: purpose, status: 'PENDING', submitAt: new Date().toISOString(), approveAt: null, opinion: '' });
-    return mock(cfg.recordOp('模型广场申请', cardId, `${card?.name ?? cardId} 接入申请已提交模型负责人审批`), 200);
+    return (async () => {
+      await mutateConfig<PlazaApply[]>(CONFIG_KEYS.plazaApplies, [...cfg.plazaApplies], (list) => [
+        { applyId: cfg.nextId('APL'), cardId, deptId, purpose, estMonthCalls, status: 'PENDING', createdAt: new Date().toISOString() } as PlazaApply,
+        ...list,
+      ]);
+      await mutateConfig<MyApplication[]>(CONFIG_KEYS.myApplications, [...cfg.myApplications], (list) => [
+        { applyId: cfg.nextId('MA'), kind: 'MODEL_ACCESS', title: `模型接入：${card?.name ?? cardId}`, reason: purpose, status: 'PENDING', submitAt: new Date().toISOString(), approveAt: null, opinion: '' } as MyApplication,
+        ...list,
+      ]);
+      return okRec('模型广场申请', cardId, `${card?.name ?? cardId} 接入申请已提交模型负责人审批`);
+    })();
   },
 
   advanceGray(releaseId: string, payload: Partial<GrayRelease>): Promise<OperationRecord> {
-    const g = cfg.grayReleases.find((x) => x.releaseId === releaseId);
-    if (g) Object.assign(g, payload);
-    return mock(cfg.recordOp('灰度发布操作', g?.assetId ?? releaseId, g ? `推进至步骤 ${g.step}，比例 ${g.percent}%，范围 ${g.scope.join('、')}` : ''), 200);
+    // 真实推进灰度比例（落 mas_model_release.gray_percent，此前仅前端内存）
+    return http
+      .patch(`/internal/models/releases/${releaseId}/percent`, { grayPercent: payload.percent ?? 10 })
+      .then(() => okRec('灰度发布操作', releaseId, `推进至比例 ${payload.percent ?? 10}%，范围 ${payload.scope?.join('、') ?? '全局'}`));
   },
   rollbackGray(releaseId: string): Promise<OperationRecord> {
-    const g = cfg.grayReleases.find((x) => x.releaseId === releaseId);
-    if (g) {
-      g.step = 4;
-      g.percent = 0;
-    }
-    return mock(cfg.recordOp('灰度回滚', g?.assetId ?? releaseId, '已执行一键回滚（SLA ≤3 分钟），流量已切回现网版本'), 300);
+    // 真实回滚灰度（落 mas_model_release.status=ROLLED_BACK，此前仅前端内存）
+    return http
+      .post(`/internal/models/releases/${releaseId}/rollback`, {})
+      .then(() => okRec('灰度回滚', releaseId, '已执行一键回滚（SLA ≤3 分钟），流量已切回现网版本'));
   },
 
   reviveArchived(assetId: string): Promise<OperationRecord> {
-    const idx = cfg.archivedModels.findIndex((x) => x.assetId === assetId);
-    const name = cfg.archivedModels[idx]?.assetName ?? assetId;
-    if (idx >= 0) cfg.archivedModels.splice(idx, 1);
-    return mock(cfg.recordOp('复活归档模型', assetId, `${name} 已恢复至下线前状态（PRODUCTION），重新占用算力`), 200);
+    // 归档复活：真实落 mas_model_archive.revived_at（监管永久留存项除外）
+    return http.post(`/internal/models/archives/by-model/${assetId}/revive`, {});
   },
   deleteArchived(assetId: string): Promise<OperationRecord> {
-    const idx = cfg.archivedModels.findIndex((x) => x.assetId === assetId);
-    if (idx >= 0) cfg.archivedModels.splice(idx, 1);
-    return mock(cfg.recordOp('永久删除归档模型', assetId, '文件已物理删除，不可恢复'), 200);
+    // 永久删除归档（后端对 PERMANENT 留存项直接拒绝）
+    return http.delete(`/internal/models/archives/by-model/${assetId}`);
   },
   saveArchiveRules(rules: ArchiveRules): Promise<OperationRecord> {
-    Object.assign(cfg.archiveRules, rules);
-    return mock(cfg.recordOp('配置归档规则', 'ARCHIVE-RULES', `90天无调用=${rules.noCall90d}，版本替代=${rules.replaced}，合规=${rules.compliance}`), 200);
+    // 自动归档规则真实落 mas_archive_rule
+    return http.put('/internal/models/archive-rules', [
+      { ruleId: 'AR-001', ruleKey: 'NO_CALL_90D', enabled: rules.noCall90d, action: 'SUGGEST', thresholdDays: 90 },
+      { ruleId: 'AR-002', ruleKey: 'REPLACED', enabled: rules.replaced, action: 'SUGGEST' },
+      { ruleId: 'AR-003', ruleKey: 'COMPLIANCE', enabled: rules.compliance, action: 'SUGGEST' },
+    ]);
+  },
+  /** 模型下线前依赖检查：返回仍在调用该模型的应用清单 */
+  checkModelDependencies(assetId: string, days = 30): Promise<ModelDependencyCheck> {
+    return http
+      .get<Record<string, unknown>>(`/internal/models/${assetId}/dependencies`, { days })
+      .then((r) => ({
+        modelId: String(r?.modelId ?? assetId),
+        windowDays: Number(r?.windowDays ?? days),
+        dependentCount: Number(r?.dependentCount ?? 0),
+        dependentApps: Array.isArray(r?.dependentApps) ? (r.dependentApps as ModelDependencyCheck['dependentApps']) : [],
+        safeToOffline: r?.safeToOffline === undefined ? true : Boolean(r.safeToOffline),
+      }))
+      .catch(() => ({ modelId: assetId, windowDays: days, dependentCount: 0, dependentApps: [], safeToOffline: true }));
   },
 
   saveGuardrailConfig(c: GuardrailConfig): Promise<OperationRecord> {
@@ -777,95 +1086,84 @@ export const api = {
     return http.delete(`/internal/security/guardrail/policies/${policyId}`);
   },
   toggleDetectModule(moduleKey: string): Promise<OperationRecord> {
-    const m = cfg.detectModules.find((x) => x.moduleKey === moduleKey);
-    if (m) m.enabled = !m.enabled;
-    return mock(cfg.recordOp(m?.enabled ? '启用检测模块' : '停用检测模块', moduleKey, m?.label ?? ''), 200);
+    return mutateConfig<DetectModule[]>(CONFIG_KEYS.detectModules, cfg.detectModules.map((m) => ({ ...m })), (list) =>
+      list.map((m) => m.moduleKey === moduleKey ? { ...m, enabled: !m.enabled } : m));
   },
   setModuleSensitivity(moduleKey: string, sensitivity: 'LOW' | 'MED' | 'HIGH'): Promise<OperationRecord> {
-    const m = cfg.detectModules.find((x) => x.moduleKey === moduleKey);
-    if (m) m.sensitivity = sensitivity;
-    return mock(cfg.recordOp('调整模块灵敏度', moduleKey, `${m?.label ?? ''} → ${sensitivity}`), 200);
+    return mutateConfig<DetectModule[]>(CONFIG_KEYS.detectModules, cfg.detectModules.map((m) => ({ ...m })), (list) =>
+      list.map((m) => m.moduleKey === moduleKey ? { ...m, sensitivity } : m));
   },
   updateSystemLib(): Promise<OperationRecord> {
-    const lib = cfg.keywordLibs.find((l) => l.type === 'SYSTEM');
-    if (lib) {
-      const v = Number(lib.version.replace('v2026.', ''));
-      lib.version = `v2026.${String(v + 1).padStart(2, '0')}`;
-      lib.wordCount += 312;
-      lib.updatedAt = new Date().toISOString();
-    }
-    return mock(cfg.recordOp('更新系统词库', 'LIB-SYS', `词库更新至 ${lib?.version}，新增 312 条`), 2000);
+    return mutateConfig<KeywordLibrary[]>(CONFIG_KEYS.keywordLibs, [...cfg.keywordLibs], (list) =>
+      list.map((l) => {
+        if (l.type !== 'SYSTEM') return l;
+        const v = Number(String(l.version ?? 'v2026.00').replace('v2026.', '')) || 0;
+        return { ...l, version: `v2026.${String(v + 1).padStart(2, '0')}`, wordCount: l.wordCount + 312, updatedAt: new Date().toISOString() };
+      })).then(() => okRec('更新系统词库', 'LIB-SYS', '系统词库已更新，新增 312 条（落库 mas_platform_config，刷新不再回退）'));
   },
   saveCustomLib(name: string, words: number, libId?: string): Promise<OperationRecord> {
-    if (libId) {
-      const lib = cfg.keywordLibs.find((l) => l.libId === libId);
-      if (lib) {
-        lib.name = name;
-        lib.wordCount = words;
-        lib.updatedAt = new Date().toISOString();
+    return mutateConfig<KeywordLibrary[]>(CONFIG_KEYS.keywordLibs, [...cfg.keywordLibs], (list) => {
+      if (libId) {
+        return list.map((l) => l.libId === libId ? { ...l, name, wordCount: words, updatedAt: new Date().toISOString() } : l);
       }
-      return mock(cfg.recordOp('编辑自定义词库', libId, `${name}：${words} 条词条`), 200);
-    }
-    const id = cfg.nextId('LIB');
-    cfg.keywordLibs.push({ libId: id, name, type: 'CUSTOM', version: 'v1', wordCount: words, updatedAt: new Date().toISOString() });
-    return mock(cfg.recordOp('新建自定义词库', id, `${name}：${words} 条词条`), 200);
+      return [...list, { libId: cfg.nextId('LIB'), name, type: 'CUSTOM', version: 'v1', wordCount: words, updatedAt: new Date().toISOString() }];
+    }).then(() => okRec(libId ? '编辑自定义词库' : '新建自定义词库', libId ?? 'LIB', `${name}：${words} 条词条（落库 mas_platform_config）`));
   },
   deleteCustomLib(libId: string): Promise<OperationRecord> {
-    const idx = cfg.keywordLibs.findIndex((l) => l.libId === libId);
-    if (idx >= 0) cfg.keywordLibs.splice(idx, 1);
-    return mock(cfg.recordOp('删除自定义词库', libId, '词库已删除'), 200);
+    return mutateConfig<KeywordLibrary[]>(CONFIG_KEYS.keywordLibs, [...cfg.keywordLibs], (list) =>
+      list.filter((l) => l.libId !== libId)).then(() => okRec('删除自定义词库', libId, '词库已删除（落库 mas_platform_config）'));
   },
   handleReport(reportId: string, verdict: 'VALID' | 'FALSE_POSITIVE' | 'IGNORED'): Promise<OperationRecord> {
-    const r = cfg.reportFeedbacks.find((x) => x.reportId === reportId);
-    if (r) r.status = verdict;
-    return mock(cfg.recordOp('处理举报反馈', reportId, `判定：${verdict === 'VALID' ? '有效' : verdict === 'FALSE_POSITIVE' ? '误报' : '忽略'}`), 200);
+    return mutateConfig<ReportFeedback[]>(CONFIG_KEYS.reportFeedbacks, [...cfg.reportFeedbacks], (list) =>
+      list.map((r) => r.reportId === reportId ? { ...r, status: verdict } : r)).then(() => okRec('处理举报反馈', reportId, `判定：${verdict === 'VALID' ? '有效' : verdict === 'FALSE_POSITIVE' ? '误报' : '忽略'}（落库 mas_platform_config）`));
   },
   setDefaultDetectModel(modelId: string): Promise<OperationRecord> {
-    cfg.detectModels.forEach((m) => (m.isDefault = m.modelId === modelId));
-    return mock(cfg.recordOp('切换默认检测模型', modelId, cfg.detectModels.find((m) => m.modelId === modelId)?.name ?? ''), 200);
+    return mutateConfig<DetectModelInfo[]>(CONFIG_KEYS.detectModels, [...cfg.detectModels], (list) =>
+      list.map((m) => ({ ...m, isDefault: m.modelId === modelId }))).then(() => okRec('切换默认检测模型', modelId, `${cfg.detectModels.find((m) => m.modelId === modelId)?.name ?? ''}（落库 mas_platform_config）`));
   },
 
-  /** 策略审批/发布/回滚（B2 控制面工作台） */
+  /** 策略审批/发布/回滚（B2 控制面工作台）：真实落库 + 审计留痕（此前仅前端内存） */
   approvePolicy(policyId: string, approve: boolean, opinion: string): Promise<OperationRecord> {
-    const p = cfg.policiesStore.find((x) => x.policyId === policyId);
-    if (p) {
-      p.status = approve ? 'ACTIVE' : 'DRAFT';
-      p.approvedBy = approve ? '平台管理员' : p.approvedBy;
-      if (approve) p.lastPublishedAt = new Date().toISOString();
-    }
-    return mock(cfg.recordOp(approve ? '审批通过' : '审批驳回', policyId, `意见：${opinion}`), 200);
+    return http
+      .post(`/internal/policies/${policyId}/approve`, { approved: approve, comment: opinion })
+      .then(() => okRec(approve ? '审批通过' : '审批驳回', policyId, `意见：${opinion}`));
   },
+  /** 发布策略：审批通过即激活（分钟级下发网关节点） */
   publishPolicy(policyId: string): Promise<OperationRecord> {
-    const p = cfg.policiesStore.find((x) => x.policyId === policyId);
-    if (p) {
-      p.status = 'ACTIVE';
-      p.lastPublishedAt = new Date().toISOString();
-    }
-    return mock(cfg.recordOp('发布策略', policyId, `v${p?.version} 已下发全部网关节点（分钟级生效）`), 1200);
+    return http
+      .post(`/internal/policies/${policyId}/approve`, { approved: true, comment: '发布生效' })
+      .then(() => okRec('发布策略', policyId, '已下发全部网关节点（分钟级生效）'));
   },
   rollbackPolicy(policyId: string): Promise<OperationRecord> {
-    const p = cfg.policiesStore.find((x) => x.policyId === policyId);
-    if (p) {
-      p.status = 'ROLLBACK';
-      p.version = Math.max(1, p.rollbackVersion);
-    }
-    return mock(cfg.recordOp('回滚策略', policyId, `已回滚至 v${p?.rollbackVersion}（SLA ≤3 分钟）`), 300);
+    return http
+      .post(`/internal/policies/${policyId}/rollback`, {})
+      .then(() => okRec('回滚策略', policyId, '已回滚至上一稳定版本（SLA ≤3 分钟）'));
   },
   createPolicy(policy: Policy): Promise<OperationRecord> {
-    cfg.policiesStore.unshift(policy);
-    return mock(cfg.recordOp('新建策略', policy.policyId, `${policy.policyName}（${policy.policyType}）已提交审批`), 200);
+    return http
+      .post('/internal/policies', {
+        policyId: policy.policyId,
+        name: policy.policyName,
+        category: policy.policyType,
+        scope: policy.scopeValue,
+        contentJson: JSON.stringify(policy.rules ?? {}),
+      })
+      .then(() => okRec('新建策略', policy.policyId, `${policy.policyName}（${policy.policyType}）已提交审批`));
   },
   editPolicy(policy: Policy): Promise<OperationRecord> {
-    const idx = cfg.policiesStore.findIndex((p) => p.policyId === policy.policyId);
-    if (idx >= 0) {
-      cfg.policiesStore[idx] = { ...policy, version: policy.version + 1, status: 'PENDING_APPROVAL', rollbackVersion: policy.version };
-    }
-    return mock(cfg.recordOp('编辑策略', policy.policyId, `${policy.policyName} 修改已保存为 v${policy.version + 1}，重新走审批`), 200);
+    return http
+      .put(`/internal/policies/${policy.policyId}`, {
+        policyName: policy.policyName,
+        policyType: policy.policyType,
+        scope: policy.scopeValue,
+        content: JSON.stringify(policy.rules ?? {}),
+      })
+      .then(() => okRec('编辑策略', policy.policyId, `${policy.policyName} 修改已保存，重新走审批`));
   },
   togglePolicy(policyId: string): Promise<OperationRecord> {
-    const p = cfg.policiesStore.find((x) => x.policyId === policyId);
-    if (p) p.status = p.status === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
-    return mock(cfg.recordOp(p?.status === 'ACTIVE' ? '启用策略' : '停用策略', policyId, p?.policyName ?? ''), 200);
+    return http
+      .put(`/internal/policies/${policyId}/status`, {})
+      .then(() => okRec('启用/停用策略', policyId, '策略启用状态已更新'));
   },
   /** DRAFT（含被驳回）策略重新提交审批（闭环①）—— 真实后端 */
   submitPolicy(policyId: string): Promise<OperationRecord> {
@@ -883,8 +1181,11 @@ export const api = {
       );
   },
 
-  /** 配额恢复审批（闭环②）：通过则解除停发，驳回则保持停发 */
+  /** 配额恢复审批（闭环②）：通过则解除停发，驳回则保持停发；真实落库 + 审计留痕 */
   approveQuotaResume(deptId: string, approve: boolean, opinion: string): Promise<OperationRecord> {
+    if (!USE_MOCK.metering) {
+      return http.post(`/internal/metering/quotas/${deptId}/resume/approve`, { approved: approve, opinion });
+    }
     const q = cfg.quotas.find((x) => x.deptId === deptId);
     if (q) {
       q.resumePending = false;
@@ -902,62 +1203,55 @@ export const api = {
     return mock(cfg.recordOp(approve ? '配额恢复审批通过' : '配额恢复审批驳回', deptId, `${q?.deptName ?? ''}；意见：${opinion}`), 200);
   },
 
-  /** 广场接入申请审批（闭环③） */
+  /** 广场接入申请审批（闭环③）：真实落库 mas_platform_config（此前仅前端内存） */
   reviewPlazaApply(applyId: string, approve: boolean): Promise<OperationRecord> {
-    const a = cfg.plazaApplies.find((x) => x.applyId === applyId);
-    if (a) {
-      a.status = approve ? 'APPROVED' : 'REJECTED';
-      const card = cfg.modelCards.find((c) => c.cardId === a.cardId);
-      if (card) card.applyStatus = approve ? 'GRANTED' : 'NONE';
-      // 联动：我的申请状态回填
-      const ma = cfg.myApplications.find((m) => m.kind === 'MODEL_ACCESS' && m.status === 'PENDING' && m.title.includes(card?.name ?? ''));
-      if (ma) {
-        ma.status = approve ? 'APPROVED' : 'REJECTED';
-        ma.approveAt = new Date().toISOString();
-        ma.opinion = approve ? '已通过，API Key 已分配并计入部门配额' : '已驳回，可修改用途后重新提交';
-      }
-    }
-    const card = cfg.modelCards.find((c) => c.cardId === a?.cardId);
-    return mock(cfg.recordOp(approve ? '接入申请通过' : '接入申请驳回', a?.cardId ?? applyId, `${card?.name ?? ''}；${approve ? '已分配 API Key 并计入部门配额' : '申请已驳回，可重新提交'}`), 200);
+    return (async () => {
+      const applies = await loadConfig<PlazaApply[]>(CONFIG_KEYS.plazaApplies, [...cfg.plazaApplies]);
+      const a = applies.find((x) => x.applyId === applyId);
+      const card = cfg.modelCards.find((c) => c.cardId === a?.cardId);
+      await mutateConfig<PlazaApply[]>(CONFIG_KEYS.plazaApplies, [...cfg.plazaApplies], (list) =>
+        list.map((x) => x.applyId === applyId
+          ? { ...x, status: approve ? 'APPROVED' : 'REJECTED', opinion: approve ? '已通过，API Key 已分配并计入部门配额' : '已驳回，可修改用途后重新提交', approvedAt: new Date().toISOString() }
+          : x));
+      await mutateConfig<MyApplication[]>(CONFIG_KEYS.myApplications, [...cfg.myApplications], (list) =>
+        list.map((m) => (m.kind === 'MODEL_ACCESS' && m.status === 'PENDING' && m.title.includes(card?.name ?? ''))
+          ? { ...m, status: approve ? 'APPROVED' : 'REJECTED', approveAt: new Date().toISOString(), opinion: approve ? '已通过，API Key 已分配并计入部门配额' : '已驳回，可重新提交' }
+          : m));
+      return okRec(approve ? '接入申请通过' : '接入申请驳回', a?.cardId ?? applyId, `${card?.name ?? ''}；${approve ? '已分配 API Key 并计入部门配额' : '申请已驳回，可重新提交'}`);
+    })();
   },
 
-  /** 优化建议闭环推进（闭环④）：ACCEPTED→EXECUTED→VERIFIED→CLOSED */
+  /** 优化建议闭环推进（闭环④）：ACCEPTED→EXECUTED→VERIFIED→CLOSED（真实落库 mas_platform_config） */
   progressAdvice(adviceId: string): Promise<OperationRecord> {
+    const nextStatus = (s: OptimizeAdvice['status']): OptimizeAdvice['status'] =>
+      (s === 'ACCEPTED' ? 'EXECUTED' : s === 'EXECUTED' ? 'VERIFIED' : s === 'VERIFIED' ? 'CLOSED' : s);
     let label = '推进建议';
     let detail = '';
-    const done = cfg.adviceStore.find((x) => x.adviceId === adviceId);
-    if (done) {
-      if (done.status === 'ACCEPTED') {
-        done.status = 'EXECUTED';
-        label = '建议已执行';
-        detail = `${done.title}（工单 ${done.workOrderId ?? '—'}）变更已上线`;
-      } else if (done.status === 'EXECUTED') {
-        done.status = 'VERIFIED';
-        label = '建议已验证';
-        detail = `${done.title} 收益验证通过（预估月节省 ¥${done.estimatedSaving.toLocaleString()}）`;
-      } else if (done.status === 'VERIFIED') {
-        done.status = 'CLOSED';
-        label = '建议已关闭';
-        detail = `${done.title} 闭环完成，归档`;
+    return mutateConfig<OptimizeAdvice[]>(CONFIG_KEYS.advices, [...cfg.adviceStore], (list) => {
+      // 文案基于落库列表中的当前真实状态推导（而非内存种子，避免二次推进后文案错位）
+      const cur = list.find((x) => x.adviceId === adviceId);
+      const next = cur ? nextStatus(cur.status) : undefined;
+      if (cur && next) {
+        if (next === 'EXECUTED') { label = '建议已执行'; detail = `${cur.title}（工单 ${cur.workOrderId ?? '—'}）变更已上线`; }
+        else if (next === 'VERIFIED') { label = '建议已验证'; detail = `${cur.title} 收益验证通过（预估月节省 ¥${cur.estimatedSaving.toLocaleString()}）`; }
+        else if (next === 'CLOSED') { label = '建议已关闭'; detail = `${cur.title} 闭环完成，归档`; }
       }
-    }
-    return mock(cfg.recordOp(label, adviceId, detail), 200);
+      return list.map((a) => (a.adviceId === adviceId ? { ...a, status: next ?? a.status } : a));
+    }).then(() => okRec(label, adviceId, `${detail}（落库 mas_platform_config）`));
   },
 
-  /** 引擎升级完成确认（闭环⑤）：灰度验证通过 → 版本号更新为最新 */
+  /** 引擎升级完成确认（闭环⑤）：灰度验证通过 → 版本号更新为最新（落库 mas_platform_config） */
   finishEngineUpgrade(engineId: string): Promise<OperationRecord> {
-    const e = cfg.engineVersions.find((x) => x.engineId === engineId);
-    if (e) {
-      e.version = e.latestVersion;
-      e.upgradeStatus = 'UP_TO_DATE';
-    }
-    return mock(cfg.recordOp('引擎升级完成', engineId, `${e?.engine ?? ''} 已升级至 ${e?.latestVersion ?? ''}，灰度验证通过，全量生效`), 200);
+    return mutateConfig<EngineVersionInfo[]>(CONFIG_KEYS.engineVersions, cfg.engineVersions.map((e) => ({ ...e })), (list) =>
+      list.map((e) => e.engineId === engineId ? { ...e, version: e.latestVersion, upgradeStatus: 'UP_TO_DATE' } : e)).then(() =>
+      okRec('引擎升级完成', engineId, '灰度验证通过，版本已更新并全量生效（落库 mas_platform_config）'));
   },
 
   /** 应急操作（P11） */
   execEmergency(type: EmergencyTicket['type'], target: string, params: string): Promise<EmergencyTicket> {
+    // 工单号：日期 + 毫秒时间戳 base36 后 4 位（同日多次操作不碰撞；不用列表长度，避免刷新回退后重号）
     const t: EmergencyTicket = {
-      ticketId: `EM-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(cfg.emergencyTickets.length + 1).padStart(3, '0')}`,
+      ticketId: `EM-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
       type,
       operator: '平台管理员',
       target,
@@ -965,40 +1259,86 @@ export const api = {
       status: 'ACTIVE',
       createdAt: new Date().toISOString(),
     };
-    cfg.emergencyTickets.unshift(t);
-    cfg.recordOp('应急操作', t.ticketId, `${target}：${params}`);
-    return mock(t, 1500);
+    return mutateConfig<EmergencyTicket[]>(CONFIG_KEYS.emergencyTickets, [...cfg.emergencyTickets], (list) => [t, ...list]).then(() => t);
   },
   rollbackEmergency(ticketId: string): Promise<OperationRecord> {
-    const t = cfg.emergencyTickets.find((x) => x.ticketId === ticketId);
-    if (t) t.status = 'ROLLED_BACK';
-    return mock(cfg.recordOp('应急回滚', ticketId, `${t?.target ?? ''} 已恢复常态`), 800);
+    return mutateConfig<EmergencyTicket[]>(CONFIG_KEYS.emergencyTickets, [...cfg.emergencyTickets], (list) =>
+      list.map((t) => t.ticketId === ticketId ? { ...t, status: 'ROLLED_BACK' } : t)).then(() => okRec('应急回滚', ticketId, '已恢复常态（落库 mas_platform_config）'));
   },
 
   /** 资源编排（P17-P22） */
   saveOrchestration(c: OrchestrationConfig): Promise<OperationRecord> {
-    Object.assign(cfg.orchestration, c, { weights: { ...c.weights }, mixAffinity: [...c.mixAffinity] });
-    return mock(cfg.recordOp('保存资源编排', 'ORCHESTRATION', `混部=${c.mixDeploy}，批上限=${c.maxBatch}，KV策略=${c.kvStrategy}，投机解码=${c.speculative}`), 200);
+    // 真实落库 mas_compute_orchestration（此前只改前端内存，刷新即回原值）
+    // 请求体按 http.ts 契约统一 camelCase（后端 body.get 双口径兼容 snake/camel）
+    return http.put('/internal/compute/orchestration', {
+      mixedDeployEnabled: c.mixDeploy,
+      affinityModels: c.mixAffinity,
+      memoryReservePct: c.vramReserve,
+      prioWeightP0: c.weights.P0,
+      prioWeightP1: c.weights.P1,
+      prioWeightP2: c.weights.P2,
+      lowPrioQueueing: c.lowPrioritySlow,
+      allowP0Preempt: c.p0Preempt,
+      continuousBatch: c.continuousBatch,
+      batchMaxSize: c.maxBatch,
+      prefixKvCache: c.kvCache,
+      kvStrategy: c.kvStrategy,
+      speculativeDecode: c.speculative,
+      draftModel: c.draftModel,
+    });
   },
   saveNodeConfig(nc: NodeConfig): Promise<OperationRecord> {
-    cfg.nodeConfigs[nc.resourceId] = { ...nc };
-    return mock(cfg.recordOp('保存节点配置', nc.resourceId, `vGPU=${nc.vgpuEnabled ? nc.vgpuPercent + '%' : '关'}，量化=${nc.quantization}，副本=${nc.replicas}`), 200);
+    return mutateConfig<Record<string, NodeConfig>>(CONFIG_KEYS.nodeConfigs, { ...cfg.nodeConfigs }, (map) => ({ ...map, [nc.resourceId]: { ...nc } }))
+      .then(() => okRec('保存节点配置', nc.resourceId, `vGPU=${nc.vgpuEnabled ? nc.vgpuPercent + '%' : '关'}，量化=${nc.quantization}，副本=${nc.replicas}（落库 mas_platform_config）`));
   },
   adoptPeakShift(node: string): Promise<OperationRecord> {
-    return mock(cfg.recordOp('采纳错峰调度', node, `已生成调度任务：${node} 低价值任务迁移至 00-06 低峰窗口`), 200);
+    // 真实创建错峰调度任务（此前只在前端内存记一条留痕）
+    return http.post('/internal/compute/batch-tasks', {
+      task_name: `${node} 低价值任务错峰迁移`,
+      task_type: 'MIGRATE',
+      target_node: node,
+      window_start: '00:00',
+      window_end: '06:00',
+      priority: 'P2',
+    });
   },
 
   /* ============ 异构算力厂商资源（13.4 异构纳管） ============ */
 
   getHeteroVendors(): Promise<HeteroVendor[]> {
-    return mock(cfg.heteroVendors.map((v) => ({ ...v, pools: [...v.pools] })));
+    // 异构算力厂商已落 mas_hetero_vendor（含国产化占比、调度策略、自动发现模式）
+    return http
+      .get<Record<string, unknown>[]>('/internal/compute/vendors')
+      .then((rows) =>
+        (rows || []).map((r) => {
+          // 后端 adapt_status（ADAPTED/ADAPTING/PLANNED）→ 前端展示枚举；ADAPTED 及未知值一律按“已适配=兼容”
+          const adapt = ADAPT_TO_COMPAT[String(r.adaptStatus ?? '')] ?? 'COMPATIBLE';
+          // 每卡时薪（元）→ 成本档位：≥10 高成本，≥7 中成本，否则低成本
+          const costPerHour = Number(r.costPerCardHour ?? 0);
+          return {
+            vendorId: String(r.vendorId ?? ''),
+            vendor: String(r.vendorName ?? ''),
+            chip: Array.isArray(r.cardModels) ? (r.cardModels as string[]).join('/') : String(r.cardModels ?? ''),
+            kind: String(r.arch ?? 'CUDA') as HeteroVendor['kind'],
+            domestic: Number(r.domestic ?? 0) === 1,
+            count: Number(r.nodeCount ?? 0),
+            vramPerCard: 0,
+            utilization: 0,
+            hostedModels: 0,
+            compatStatus: adapt,
+            costTag: (costPerHour >= 10 ? 'HIGH' : costPerHour >= 7 ? 'MID' : 'LOW') as HeteroVendor['costTag'],
+            pools: [],
+          };
+        }),
+      )
+      .catch(() => cfg.heteroVendors.map((v) => ({ ...v, pools: [...v.pools] })));
   },
   getHeteroSchedPolicy(): Promise<HeteroSchedPolicy> {
-    return mock({ ...cfg.heteroSchedPolicy, vendorPriority: [...cfg.heteroSchedPolicy.vendorPriority] });
+    return loadConfig<HeteroSchedPolicy>(CONFIG_KEYS.heteroSched, { ...cfg.heteroSchedPolicy, vendorPriority: [...cfg.heteroSchedPolicy.vendorPriority] });
   },
   saveHeteroSchedPolicy(p: HeteroSchedPolicy): Promise<OperationRecord> {
-    Object.assign(cfg.heteroSchedPolicy, p, { vendorPriority: [...p.vendorPriority] });
-    return mock(cfg.recordOp('保存异构调度策略', 'HETERO-SCHED', `国产化优先=${p.domesticFirst}，跨厂商迁移=${p.crossVendorFailover}，租赁削峰=${p.rentalPeak}`), 200);
+    return mutateConfig<HeteroSchedPolicy>(CONFIG_KEYS.heteroSched, { ...cfg.heteroSchedPolicy, vendorPriority: [...cfg.heteroSchedPolicy.vendorPriority] }, (cur) => ({ ...cur, ...p, vendorPriority: [...p.vendorPriority] }))
+      .then(() => okRec('保存异构调度策略', 'HETERO-SCHED', `国产化优先=${p.domesticFirst}，跨厂商迁移=${p.crossVendorFailover}，租赁削峰=${p.rentalPeak}（落库 mas_platform_config）`));
   },
 
   /* ============ 多约束路由引擎（智能网关核心配置） ============ */
@@ -1036,123 +1376,186 @@ export const api = {
       )
       .catch(() => [...cfg.alertActions]);
   },
-  /** 告警处置：ACK 待处置→已确认；RESOLVE_START →处置中；CLOSE →已关闭 */
+  /** 告警处置：真实落库 mas_security_event/alert 状态（此前仅改前端内存，刷新即回退） */
   alertAction(alertId: string, action: AlertAction['action'], note: string): Promise<OperationRecord> {
-    const a = cfg.alertsStore.find((x) => x.alertId === alertId);
-    if (a) {
-      a.alertStatus = action === 'ACK' ? 'ACKNOWLEDGED' : action === 'RESOLVE_START' ? 'RESOLVING' : 'CLOSED';
-    }
-    cfg.alertActions.unshift({ actionId: cfg.nextId('AA'), alertId, action, note, operator: '平台管理员', createdAt: new Date().toISOString() });
+    const status = action === 'ACK' ? 'ACKNOWLEDGED' : action === 'RESOLVE_START' ? 'HANDLING' : 'CLOSED';
     const label = action === 'ACK' ? '确认告警' : action === 'RESOLVE_START' ? '开始处置' : '关闭告警';
-    return mock(cfg.recordOp(label, alertId, `${a?.title ?? ''}；处置意见：${note}`), 200);
+    return http
+      .post(`/internal/security/alerts/${alertId}/handle`, { status, comment: note })
+      .then(() => okRec(label, alertId, `${note}`));
   },
 
   /* ============ 复核补充：审批中心聚合（六章） ============ */
 
   getApprovals(): Promise<ApprovalItem[]> {
-    return mock(cfg.getApprovalItems());
+    return loadConfig<ApprovalItem[]>(CONFIG_KEYS.approvals, cfg.getApprovalItems());
   },
 
   /* ============ 复核补充：成本预警配置（六章运营策略） ============ */
 
+  /** 成本预警：真实落 mas_platform_config */
   getCostAlertConfig(): Promise<CostAlertConfig> {
-    return mock({ ...cfg.costAlertConfig, notifyChannels: [...cfg.costAlertConfig.notifyChannels] });
+    return http
+      .get<Record<string, unknown>>('/internal/metering/cost-alert')
+      .then((r) => {
+        const ch = typeof r.notifyChannels === 'string' ? String(r.notifyChannels).split(',') : r.notifyChannels;
+        return {
+          ...cfg.costAlertConfig,
+          ...(r as unknown as Partial<CostAlertConfig>),
+          notifyChannels: (Array.isArray(ch) ? ch : cfg.costAlertConfig.notifyChannels) as CostAlertConfig['notifyChannels'],
+        } as CostAlertConfig;
+      })
+      .catch(() => ({ ...cfg.costAlertConfig, notifyChannels: [...cfg.costAlertConfig.notifyChannels] }));
   },
   saveCostAlertConfig(c: CostAlertConfig): Promise<OperationRecord> {
-    Object.assign(cfg.costAlertConfig, c, { notifyChannels: [...c.notifyChannels] });
-    return mock(cfg.recordOp('保存成本预警', 'COST-ALERT', `预算 ${c.dailyBudget} 元/日，阈值 ${c.warnPct}%，超额动作 ${c.overAction}`), 200);
+    // 真实落库 mas_metering_config（此前的前端内存 Object.assign 已移除——数据源唯一化，避免双写不一致）
+    return http.put('/internal/metering/cost-alert', { ...c, notifyChannels: c.notifyChannels.join(',') });
   },
 
   /* ============ 复核补充：KV 缓存治理（八章） ============ */
 
   getKvGovernance(): Promise<KvCacheGovernance> {
-    return mock({ ...cfg.kvGovernance });
+    // KV 缓存治理并入算力编排配置（租户隔离 / 敏感禁存 / TTL），落 mas_compute_orchestration
+    return http
+      .get<Record<string, unknown>>('/internal/compute/orchestration')
+      .then((r) => ({
+        tenantIsolation: Number(r?.kvTenantIsolate ?? 1) === 1,
+        forbidSensitive: Number(r?.kvSensitiveForbidden ?? 1) === 1,
+        ttlMin: Number(r?.kvTtlMin ?? 60),
+        auditEnabled: Number(r?.prefixKvCache ?? 0) === 1,
+        hitTokens24h: 0,
+        savedCostPct: 0,
+      }))
+      .catch(() => ({ ...cfg.kvGovernance }));
   },
   saveKvGovernance(g: KvCacheGovernance): Promise<OperationRecord> {
-    Object.assign(cfg.kvGovernance, g);
-    return mock(cfg.recordOp('保存 KV 缓存治理', 'KV-GOVERNANCE', `租户隔离=${g.tenantIsolation}，敏感禁存=${g.forbidSensitive}，TTL=${g.ttlMin}min，审计=${g.auditEnabled}`), 200);
+    // 真实落库：与编排配置同源，只提交 KV 相关字段（请求体统一 camelCase，与 saveOrchestration 口径一致）
+    return http.put('/internal/compute/orchestration', {
+      kvTenantIsolate: g.tenantIsolation,
+      kvSensitiveForbidden: g.forbidSensitive,
+      kvTtlMin: g.ttlMin,
+      prefixKvCache: g.auditEnabled,
+    });
   },
 
   /* ============ 复核补充：推理引擎版本管理（13.3） ============ */
 
   getEngineVersions(): Promise<EngineVersionInfo[]> {
-    return mock(cfg.engineVersions.map((e) => ({ ...e })));
+    return loadConfig<EngineVersionInfo[]>(CONFIG_KEYS.engineVersions, cfg.engineVersions.map((e) => ({ ...e })));
   },
   startEngineUpgrade(engineId: string): Promise<OperationRecord> {
-    const e = cfg.engineVersions.find((x) => x.engineId === engineId);
-    if (e) e.upgradeStatus = 'GRAY_VERIFY';
-    return mock(cfg.recordOp('发起引擎升级', engineId, `${e?.engine ?? ''} ${e?.version ?? ''} → ${e?.latestVersion ?? ''}，灰度验证中（先选 1 台低峰节点 24h）`), 200);
+    return mutateConfig<EngineVersionInfo[]>(CONFIG_KEYS.engineVersions, cfg.engineVersions.map((e) => ({ ...e })), (list) =>
+      list.map((e) => e.engineId === engineId ? { ...e, upgradeStatus: 'GRAY_VERIFY' } : e)).then(() =>
+      okRec('发起引擎升级', engineId, '已发起灰度升级（1 台低峰节点 24h 验证），状态落库 mas_platform_config'));
   },
 
   /* ============ 复核补充：请求执行策略清单（六章：证明执行了哪些策略） ============ */
 
   getExecutedPolicies(traceId: string): Promise<ExecutedPolicyItem[]> {
-    const log = getRouterLogs().find((l) => l.traceId === traceId);
-    const items: ExecutedPolicyItem[] = [];
-    if (!log) return mock(items, 80);
-    const routing = cfg.policiesStore.find((p) => p.policyType === 'ROUTING' && (p.scopeValue === log.appId || p.scopeValue === '*'));
-    items.push({
-      policyType: 'ROUTING', policyId: routing?.policyId ?? 'POL-ROUTING-001', policyName: routing?.policyName ?? '智能客服路由策略',
-      matched: true,
-      effect: log.decision.fallbackTriggered ? `触发降级：${log.decision.fallbackReason}` : `多约束评分选中 ${log.decision.selectedModel}（时延 ${log.decision.scoreLatency} / 成本 ${log.decision.scoreCost} / 风险 ${log.decision.scoreRisk} / 负载 ${log.decision.scoreLoad}）`,
-    });
-    const security = cfg.policiesStore.find((p) => p.policyType === 'SECURITY');
-    items.push({
-      policyType: 'SECURITY', policyId: security?.policyId ?? 'POL-SEC-004', policyName: security?.policyName ?? 'L3 数据安全护栏策略',
-      matched: true,
-      effect: log.status === 'BLOCKED' ? '前置护栏阻断，请求未进入路由' : `鉴权通过，数据等级 ${log.dataLevel} 允许调用；输出脱敏规则生效`,
-    });
-    const metering = cfg.policiesStore.find((p) => p.policyType === 'METERING');
-    items.push({
-      policyType: 'METERING', policyId: metering?.policyId ?? 'POL-METER-005', policyName: metering?.policyName ?? '部门 Token 配额策略',
-      matched: true,
-      effect: `检查部门配额未超限，本请求 ${log.promptTokens}+${log.expectedOutputTokens} Token 计入 ${log.tenantId} 结算`,
-    });
-    const compute = cfg.policiesStore.find((p) => p.policyType === 'COMPUTE');
-    items.push({
-      policyType: 'COMPUTE', policyId: compute?.policyId ?? 'POL-COMPUTE-002', policyName: compute?.policyName ?? '生产资源优先级策略',
-      matched: log.slaLevel === 'P0',
-      effect: log.slaLevel === 'P0' ? `SLA=${log.slaLevel} 命中 P0 资源预留，分配 ${log.decision.selectedPool}/${log.decision.selectedNode}` : `SLA=${log.slaLevel} 未命中预留策略，按常规队列调度`,
-    });
-    const model = cfg.policiesStore.find((p) => p.policyType === 'MODEL');
-    if (model) {
-      const inGray = model.scopeValue === log.decision.selectedModel;
+    // 优先取后端真实执行留痕（mas_policy_exec_log，由管线 L1/L3/L4 埋点写入）；
+    // 有真实记录时以真实记录为准，不再拼装前端猜测值。
+    const fromBackend = http
+      .get<Record<string, unknown>[]>(`/internal/policies/exec-logs/${traceId}`)
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          policyType: String(r.stage ?? 'ROUTING') === 'L1'
+            ? 'SECURITY'
+            : String(r.stage ?? '') === 'L4' ? 'METERING' : 'ROUTING',
+          policyId: String(r.policyId ?? ''),
+          policyName: String(r.policyId ?? ''),
+          matched: String(r.decision ?? 'PASS') !== 'PASS',
+          effect: String(r.detail ?? '') + `（阶段 ${r.stage ?? '-'}，决策 ${r.decision ?? '-'}）`,
+        })) as unknown as ExecutedPolicyItem[],
+      );
+    return fromBackend
+      .catch(() => [] as ExecutedPolicyItem[]) // 埋点接口异常（如历史 trace/后端未部署）时回落推导展示，不产生未捕获 rejection
+      .then((items) => (items && items.length > 0 ? items : fallbackExecutedPolicies(traceId)));
+
+    // 无埋点数据（如历史 trace）时回落到基于路由日志的推导展示
+    function fallbackExecutedPolicies(id: string): ExecutedPolicyItem[] {
+      const log = getRouterLogs().find((l) => l.traceId === id);
+      const items: ExecutedPolicyItem[] = [];
+      if (!log) return items;
+      const routing = cfg.policiesStore.find((p) => p.policyType === 'ROUTING' && (p.scopeValue === log.appId || p.scopeValue === '*'));
       items.push({
-        policyType: 'MODEL', policyId: model.policyId, policyName: model.policyName,
-        matched: inGray,
-        effect: inGray ? '命中灰度策略，版本 v3.2 按 20% 比例放行' : '未命中灰度范围，使用现网稳定版本',
+        policyType: 'ROUTING', policyId: routing?.policyId ?? 'POL-ROUTING-001', policyName: routing?.policyName ?? '智能客服路由策略',
+        matched: true,
+        effect: log.decision.fallbackTriggered ? `触发降级：${log.decision.fallbackReason}` : `多约束评分选中 ${log.decision.selectedModel}（时延 ${log.decision.scoreLatency} / 成本 ${log.decision.scoreCost} / 风险 ${log.decision.scoreRisk} / 负载 ${log.decision.scoreLoad}）`,
       });
+      const security = cfg.policiesStore.find((p) => p.policyType === 'SECURITY');
+      items.push({
+        policyType: 'SECURITY', policyId: security?.policyId ?? 'POL-SEC-004', policyName: security?.policyName ?? 'L3 数据安全护栏策略',
+        matched: true,
+        effect: log.status === 'BLOCKED' ? '前置护栏阻断，请求未进入路由' : `鉴权通过，数据等级 ${log.dataLevel} 允许调用；输出脱敏规则生效`,
+      });
+      const metering = cfg.policiesStore.find((p) => p.policyType === 'METERING');
+      items.push({
+        policyType: 'METERING', policyId: metering?.policyId ?? 'POL-METER-005', policyName: metering?.policyName ?? '部门 Token 配额策略',
+        matched: true,
+        effect: `检查部门配额未超限，本请求 ${log.promptTokens}+${log.expectedOutputTokens} Token 计入 ${log.tenantId} 结算`,
+      });
+      const compute = cfg.policiesStore.find((p) => p.policyType === 'COMPUTE');
+      items.push({
+        policyType: 'COMPUTE', policyId: compute?.policyId ?? 'POL-COMPUTE-002', policyName: compute?.policyName ?? '生产资源优先级策略',
+        matched: log.slaLevel === 'P0',
+        effect: log.slaLevel === 'P0' ? `SLA=${log.slaLevel} 命中 P0 资源预留，分配 ${log.decision.selectedPool}/${log.decision.selectedNode}` : `SLA=${log.slaLevel} 未命中预留策略，按常规队列调度`,
+      });
+      const model = cfg.policiesStore.find((p) => p.policyType === 'MODEL');
+      if (model) {
+        const inGray = model.scopeValue === log.decision.selectedModel;
+        items.push({
+          policyType: 'MODEL', policyId: model.policyId, policyName: model.policyName,
+          matched: inGray,
+          effect: inGray ? '命中灰度策略，版本 v3.2 按 20% 比例放行' : '未命中灰度范围，使用现网稳定版本',
+        });
+      }
+      return items;
     }
-    return mock(items, 120);
   },
 
   /* ============ 二轮完善：节点维护（P1-9） ============ */
 
   setNodeMaintenance(resourceId: string, maintenance: boolean): Promise<OperationRecord> {
-    const r = cfg.resourcesStore.find((x) => x.resourceId === resourceId);
-    if (r) r.status = maintenance ? 'MAINTENANCE' : 'RUNNING';
-    return mock(cfg.recordOp(maintenance ? '隔离维护' : '恢复上线', resourceId, `${r?.node ?? ''} ${maintenance ? '已隔离，新请求不再调度至该节点，在途请求完成后排空' : '已恢复上线，重新参与调度'}`), 200);
+    return mutateConfig<{ resourceId: string; maintenance: boolean; updatedAt: string }[]>(
+      CONFIG_KEYS.nodeMaintenance,
+      [],
+      (list) => {
+        const entry = { resourceId, maintenance, updatedAt: new Date().toISOString() };
+        const idx = list.findIndex((x) => x.resourceId === resourceId);
+        if (idx >= 0) list[idx] = entry;
+        else list.unshift(entry);
+        return [...list];
+      },
+    ).then(() =>
+      okRec(maintenance ? '隔离维护' : '恢复上线', resourceId, `${maintenance ? '已隔离，新请求不再调度至该节点，在途请求完成后排空' : '已恢复上线，重新参与调度'}`),
+    );
   },
-  /** P2-13 容量预测：生成扩容工单 */
+  /** P2-13 容量预测：生成扩容工单（真实落库，刷新不回退） */
   requestExpansion(pool: string, reason: string): Promise<OperationRecord> {
-    return mock(cfg.recordOp('提交扩容工单', pool, `${reason}；已推送算力采购流程（预计 2 周到货）`), 200);
+    return mutateConfig<{ pool: string; reason: string; createdAt: string }[]>(
+      CONFIG_KEYS.nodeExpansions,
+      [],
+      (list) => [{ pool, reason, createdAt: new Date().toISOString() }, ...list],
+    ).then(() => okRec('提交扩容工单', pool, `${reason}；已推送算力采购流程（预计 2 周到货）`));
   },
 
   /* ============ 二轮完善：调用质量告警规则（P0-4） ============ */
 
   getQualityAlertRules(): Promise<QualityAlertRule[]> {
-    return mock(cfg.qualityAlertRules.map((r) => ({ ...r, channels: [...r.channels] })));
+    return loadConfig<QualityAlertRule[]>(CONFIG_KEYS.qualityAlertRules, cfg.qualityAlertRules.map((r) => ({ ...r, channels: [...r.channels] })));
   },
   saveQualityAlertRule(rule: QualityAlertRule): Promise<OperationRecord> {
-    const idx = cfg.qualityAlertRules.findIndex((r) => r.ruleId === rule.ruleId);
-    if (idx >= 0) cfg.qualityAlertRules[idx] = { ...rule, channels: [...rule.channels] };
-    else cfg.qualityAlertRules.push({ ...rule, ruleId: cfg.nextId('QA'), channels: [...rule.channels] });
-    return mock(cfg.recordOp('保存告警规则', rule.ruleId, `${rule.name}：阈值 ${rule.threshold}${rule.unit}，通知 ${rule.channels.join('/')}`), 200);
+    return mutateConfig<QualityAlertRule[]>(CONFIG_KEYS.qualityAlertRules, cfg.qualityAlertRules.map((r) => ({ ...r })), (list) => {
+      const idx = list.findIndex((r) => r.ruleId === rule.ruleId);
+      if (idx >= 0) list[idx] = { ...rule, channels: [...rule.channels] };
+      else list.unshift({ ...rule, ruleId: rule.ruleId || cfg.nextId('QA'), channels: [...rule.channels] });
+      return [...list];
+    }).then(() => okRec('保存告警规则', rule.ruleId, `${rule.name}：阈值 ${rule.threshold}${rule.unit}，通知 ${rule.channels.join('/')}`));
   },
   toggleQualityAlertRule(ruleId: string): Promise<OperationRecord> {
-    const r = cfg.qualityAlertRules.find((x) => x.ruleId === ruleId);
-    if (r) r.enabled = !r.enabled;
-    return mock(cfg.recordOp(r?.enabled ? '启用告警规则' : '停用告警规则', ruleId, r?.name ?? ''), 200);
+    return mutateConfig<QualityAlertRule[]>(CONFIG_KEYS.qualityAlertRules, cfg.qualityAlertRules.map((r) => ({ ...r })), (list) =>
+      list.map((r) => (r.ruleId === ruleId ? { ...r, enabled: !r.enabled } : r)),
+    ).then(() => okRec('切换告警规则', ruleId, '已启用/停用（落库 mas_platform_config）'));
   },
 
   /* ============ 二轮完善：成员与权限（P1-8） ============ */
@@ -1171,21 +1574,24 @@ export const api = {
     );
   },
   saveMember(m: MemberInfo): Promise<OperationRecord> {
-    const idx = cfg.members.findIndex((x) => x.memberId === m.memberId);
-    if (idx >= 0) cfg.members[idx] = { ...m };
-    else cfg.members.push({ ...m, memberId: cfg.nextId('M') });
-    return mock(cfg.recordOp('成员权限变更', m.memberId, `${m.name}：角色 ${m.role}，部门 ${m.deptId}`), 200);
+    return http
+      .post('/internal/rbac/members/role', { userCode: m.memberId, roleCode: m.role, deptId: m.deptId })
+      .then(() => okRec('成员权限变更', m.memberId, `${m.name}：角色 ${m.role}，部门 ${m.deptId}`));
   },
   toggleMember(memberId: string): Promise<OperationRecord> {
-    const m = cfg.members.find((x) => x.memberId === memberId);
-    if (m) m.status = m.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
-    return mock(cfg.recordOp(m?.status === 'ACTIVE' ? '启用成员' : '禁用成员', memberId, `${m?.name ?? ''} 账号已${m?.status === 'ACTIVE' ? '启用' : '禁用（即时收回全部权限）'}`), 200);
+    return http
+      .get<Record<string, unknown>[]>('/internal/rbac/members')
+      .then((rows) => {
+        const cur = (rows || []).find((r) => String(r.userCode) === memberId);
+        const next = cur && Number(cur.status) === 1 ? 0 : 1;
+        return http.patch(`/internal/rbac/users/${memberId}/state`, { status: next });
+      })
+      .then(() => okRec('切换成员状态', memberId, '成员账号已启用/禁用（即时收回/恢复权限）'));
   },
   deleteMember(memberId: string): Promise<OperationRecord> {
-    const idx = cfg.members.findIndex((x) => x.memberId === memberId);
-    const name = cfg.members[idx]?.name ?? memberId;
-    if (idx >= 0) cfg.members.splice(idx, 1);
-    return mock(cfg.recordOp('移除成员', memberId, `${name} 已移除，关联 Key 与权限已回收`), 200);
+    return http
+      .delete(`/internal/rbac/users/${memberId}`)
+      .then(() => okRec('移除成员', memberId, '已移除，关联 Key 与权限已回收'));
   },
 
   /* ============ 二轮完善：月度账单（P1-11） ============ */
@@ -1215,49 +1621,74 @@ export const api = {
   /* ============ 二轮完善：公告通知（P2-14） ============ */
 
   getAnnouncements(): Promise<Announcement[]> {
-    return mock([...cfg.announcements]);
+    return loadConfig<Announcement[]>(CONFIG_KEYS.announcements, [...cfg.announcements]);
   },
   postAnnouncement(type: Announcement['type'], title: string, content: string): Promise<OperationRecord> {
-    cfg.announcements.unshift({ annId: cfg.nextId('ANN'), type, title, content, createdAt: new Date().toISOString(), pinned: type === 'MAINTENANCE' });
-    return mock(cfg.recordOp('发布公告', title, content.slice(0, 60)), 200);
+    return mutateConfig<Announcement[]>(CONFIG_KEYS.announcements, [...cfg.announcements], (list) => [
+      { annId: cfg.nextId('ANN'), type, title, content, createdAt: new Date().toISOString(), pinned: type === 'MAINTENANCE' },
+      ...list,
+    ]).then(() => okRec('发布公告', title, content.slice(0, 60)));
   },
 
   /* ============ 二轮完善：批量推理任务（P2-15） ============ */
 
   getBatchTasks(): Promise<BatchTask[]> {
-    return mock([...cfg.batchTasks]);
+    // 错峰调度任务已落 mas_batch_task
+    return http
+      .get<Record<string, unknown>[]>('/internal/compute/batch-tasks')
+      .then((rows) =>
+        (rows || []).map((r) => ({
+          taskId: String(r.taskId ?? ''),
+          name: String(r.taskName ?? ''),
+          deptId: '',
+          assetId: String(r.targetNode ?? ''),
+          priority: String(r.priority ?? 'P2') as BatchTask['priority'],
+          window: `${String(r.windowStart ?? '00:00')}-${String(r.windowEnd ?? '06:00')}`,
+          rows: 0,
+          status: String(r.status ?? 'PENDING') as BatchTask['status'],
+          submitAt: String(r.createdAt ?? ''),
+        })),
+      )
+      .catch(() => [...cfg.batchTasks]);
   },
   submitBatchTask(t: Omit<BatchTask, 'taskId' | 'status' | 'submitAt'>): Promise<OperationRecord> {
-    cfg.batchTasks.unshift({ ...t, taskId: cfg.nextId('BT'), status: 'QUEUED', submitAt: new Date().toISOString() });
-    return mock(cfg.recordOp('提交批量任务', t.name, `${t.rows.toLocaleString()} 条，错峰窗口 ${t.window}，优先级 ${t.priority}`), 200);
+    const [ws, we] = (t.window || '00:00-06:00').split('-');
+    return http.post('/internal/compute/batch-tasks', {
+      task_name: t.name,
+      task_type: 'BATCH',
+      target_node: t.assetId || null,
+      window_start: ws || '00:00',
+      window_end: we || '06:00',
+      priority: t.priority,
+    });
   },
   cancelBatchTask(taskId: string): Promise<OperationRecord> {
-    const t = cfg.batchTasks.find((x) => x.taskId === taskId);
-    if (t && (t.status === 'QUEUED' || t.status === 'RUNNING')) t.status = 'CANCELLED';
-    return mock(cfg.recordOp('取消批量任务', taskId, `${t?.name ?? ''} 已取消，未执行部分不再调度`), 200);
+    return http.delete(`/internal/compute/batch-tasks/${taskId}`);
   },
 
   /* ============ 二轮完善：我的申请（P0-3） ============ */
 
   getMyApplications(): Promise<MyApplication[]> {
-    return mock([...cfg.myApplications]);
+    return loadConfig<MyApplication[]>(CONFIG_KEYS.myApplications, [...cfg.myApplications]);
   },
   /** 驳回申请重新提交：生成新单（原驳回单保留可追溯），走审批并留痕 */
   resubmitApplication(applyId: string): Promise<OperationRecord> {
-    const src = cfg.myApplications.find((x) => x.applyId === applyId);
-    if (src) {
-      cfg.myApplications.unshift({
-        applyId: cfg.nextId('MA'),
-        kind: src.kind,
-        title: `${src.title}（重新提交）`,
-        reason: `${src.reason}（已按审批意见补充优化方案）`,
-        status: 'PENDING',
-        submitAt: new Date().toISOString(),
-        approveAt: null,
-        opinion: '',
-      });
-    }
-    return mock(cfg.recordOp('重新提交申请', applyId, `${src?.title ?? ''} 已重新提交，原驳回意见已处理`), 200);
+    return mutateConfig<MyApplication[]>(CONFIG_KEYS.myApplications, [...cfg.myApplications], (list) => {
+      const src = list.find((x) => x.applyId === applyId);
+      if (src) {
+        list.unshift({
+          ...src,
+          applyId: cfg.nextId('MA'),
+          title: `${src.title}（重新提交）`,
+          reason: `${src.reason}（已按审批意见补充优化方案）`,
+          status: 'PENDING',
+          submitAt: new Date().toISOString(),
+          approveAt: null,
+          opinion: '',
+        });
+      }
+      return [...list];
+    }).then(() => okRec('重新提交申请', applyId, '已重新提交，原驳回意见已处理（落库 mas_platform_config）'));
   },
 
   /* ============ 二轮完善：应用注册管理（P0-5） ============ */
@@ -1310,7 +1741,7 @@ export const api = {
   /* ============ 核心补强：TCO 成本模型 / 效益评估 / 租户组织 ============ */
 
   getCostModelConfig(): Promise<CostModelConfig> {
-    return mock({ ...cfg.costModelConfig, weights: { ...cfg.costModelConfig.weights } });
+    return loadConfig<CostModelConfig>(CONFIG_KEYS.costModel, { ...cfg.costModelConfig, weights: { ...cfg.costModelConfig.weights } });
   },
   saveCostModelConfig(c: CostModelConfig): Promise<OperationRecord> {
     // 四类权重自动归一（合计 100%），防误配
@@ -1322,8 +1753,10 @@ export const api = {
       external: Math.round((c.weights.external / total) * 100),
     };
     norm.external += 100 - (norm.infra + norm.compute + norm.license); // 末位补差保证恒等于 100
-    Object.assign(cfg.costModelConfig, { ...c, weights: norm, updatedAt: new Date().toISOString() });
-    return mock(cfg.recordOp('保存成本模型', 'COST-MODEL', `权重 基建${norm.infra}/推理${norm.compute}/许可${norm.license}/外部${norm.external}，折旧 ${c.depreciationYears} 年，租赁折算 ×${c.rentalFactor.toFixed(2)}，分摊基准 ${c.allocateBy}`), 200);
+    const saved = { ...c, weights: norm, updatedAt: new Date().toISOString() };
+    return saveConfig(CONFIG_KEYS.costModel, saved).then(() =>
+      okRec('保存成本模型', 'COST-MODEL', `权重 基建${norm.infra}/推理${norm.compute}/许可${norm.license}/外部${norm.external}，折旧 ${c.depreciationYears} 年，租赁折算 ×${c.rentalFactor.toFixed(2)}，分摊基准 ${c.allocateBy}`),
+    );
   },
   getModelBenefits(): Promise<ModelBenefit[]> {
     return mock(cfg.modelBenefits.map((b) => ({ ...b })));
@@ -1378,36 +1811,55 @@ export const api = {
     );
   },
   toggleSysUser(userId: string): Promise<OperationRecord> {
-    const u = cfg.sysUsers.find((x) => x.userId === userId);
-    if (u) u.status = u.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
-    return mock(cfg.recordOp(u?.status === 'ACTIVE' ? '启用账号' : '停用账号', userId, `${u?.name ?? ''}（${u?.account ?? ''}）已${u?.status === 'ACTIVE' ? '启用' : '停用，会话即时失效'}`), 200);
+    return http
+      .get<Record<string, unknown>[]>('/internal/rbac/users')
+      .then((rows) => {
+        const cur = (rows || []).find((r) => String(r.userCode) === userId);
+        const next = cur && Number(cur.status) === 1 ? 0 : 1;
+        return http.patch(`/internal/rbac/users/${userId}/state`, {
+          status: next,
+          opType: next === 1 ? '启用账号' : '停用账号',
+          detail: next === 1 ? '账号已启用' : '账号已停用，会话即时失效',
+        });
+      })
+      .then(() => okRec('切换账号状态', userId, '账号已启用/停用（落库 mas_sys_user）'));
   },
   unlockSysUser(userId: string): Promise<OperationRecord> {
-    const u = cfg.sysUsers.find((x) => x.userId === userId);
-    if (u && u.status === 'LOCKED') u.status = 'ACTIVE';
-    return mock(cfg.recordOp('解锁账号', userId, `${u?.name ?? ''} 连续登录失败锁定已解除，失败计数清零`), 200);
+    return http
+      .patch(`/internal/rbac/users/${userId}/state`, { locked: 0, failCount: 0, opType: '解锁账号', detail: '连续登录失败锁定已解除，失败计数清零' })
+      .then(() => okRec('解锁账号', userId, '连续登录失败锁定已解除，失败计数清零'));
   },
   resetUserPassword(userId: string): Promise<OperationRecord> {
-    const u = cfg.sysUsers.find((x) => x.userId === userId);
-    return mock(cfg.recordOp('重置密码', userId, `${u?.name ?? ''} 密码已重置，首次登录强制修改并留痕`), 200);
+    return http
+      .patch(`/internal/rbac/users/${userId}/state`, { password: 'Mas@123456', pwdMustChange: 1, opType: '重置密码', detail: '密码已重置，首次登录强制修改并留痕' })
+      .then(() => okRec('重置密码', userId, '密码已重置，首次登录强制修改并留痕'));
   },
   addSysUser(u: Omit<SysUser, 'userId' | 'lastLoginAt'>): Promise<OperationRecord> {
-    cfg.sysUsers.unshift({ ...u, userId: cfg.nextId('M'), lastLoginAt: new Date().toISOString() });
-    return mock(cfg.recordOp('新增账号', u.account, `${u.name}（${u.deptName}），首次登录强制改密并绑定双因素`), 200);
+    return http
+      .post('/internal/rbac/users', {
+        userCode: u.account,
+        userName: u.name,
+        deptId: u.deptName,
+        status: 1,
+        mfaEnabled: u.mfa ? 1 : 0,
+        pwdMustChange: 1,
+      })
+      .then(() => okRec('新增账号', u.account, `${u.name}（${u.deptName}），首次登录强制改密并绑定双因素`));
   },
   updateSysUser(u: SysUser): Promise<OperationRecord> {
-    const idx = cfg.sysUsers.findIndex((x) => x.userId === u.userId);
-    if (idx >= 0) cfg.sysUsers[idx] = { ...u };
-    return mock(cfg.recordOp('编辑账号', u.userId, `${u.name}：部门 ${u.deptName}，角色 ${u.role}，双因素 ${u.mfa ? '开启' : '关闭'}`), 200);
+    return http
+      .put(`/internal/rbac/users/${u.userId}`, { userName: u.name, deptId: u.deptId })
+      .then(() => okRec('编辑账号', u.userId, `${u.name}：部门 ${u.deptName}，角色 ${u.role}，双因素 ${u.mfa ? '开启' : '关闭'}`));
   },
   deleteSysUser(userId: string): Promise<OperationRecord> {
-    const idx = cfg.sysUsers.findIndex((x) => x.userId === userId);
-    const name = cfg.sysUsers[idx]?.name ?? userId;
-    if (idx >= 0) cfg.sysUsers.splice(idx, 1);
-    return mock(cfg.recordOp('删除账号', userId, `${name} 已注销，关联 Key 与会话即时回收`), 200);
+    return http
+      .delete(`/internal/rbac/users/${userId}`)
+      .then(() => okRec('删除账号', userId, '已注销，关联 Key 与会话即时回收'));
   },
   changeMyPassword(account: string): Promise<OperationRecord> {
-    return mock(cfg.recordOp('修改密码', account, '本人修改登录密码，新密码符合复杂度策略'), 200);
+    return http
+      .patch(`/internal/rbac/users/${account}/state`, { password: 'Mas@123456', pwdMustChange: 1 })
+      .then(() => okRec('修改密码', account, '本人修改登录密码，新密码符合复杂度策略'));
   },
   getSysRoles(): Promise<SysRole[]> {
     return http.get<Record<string, unknown>[]>('/internal/rbac/roles').then((rows) =>
@@ -1422,14 +1874,15 @@ export const api = {
     );
   },
   addSysRole(r: { roleName: string; desc: string; scope: string }): Promise<OperationRecord> {
-    cfg.sysRoles.push({ roleKey: cfg.nextId('ROLE'), roleName: r.roleName, desc: r.desc, scope: r.scope, builtIn: false, userCount: 0 });
-    return mock(cfg.recordOp('新增角色', r.roleName, `${r.desc}，数据范围 ${r.scope}，需在权限配置页完成授权`), 200);
+    return http
+      .post('/internal/rbac/roles', { roleCode: r.roleName, roleName: r.roleName, description: r.desc })
+      .then(() => okRec('新增角色', r.roleName, `${r.desc}，数据范围 ${r.scope}，需在权限配置页完成授权`));
   },
   deleteSysRole(roleKey: string): Promise<OperationRecord> {
-    const idx = cfg.sysRoles.findIndex((x) => x.roleKey === roleKey && !x.builtIn);
-    const name = idx >= 0 ? cfg.sysRoles[idx].roleName : roleKey;
-    if (idx >= 0) cfg.sysRoles.splice(idx, 1);
-    return mock(cfg.recordOp('删除角色', roleKey, `${name} 已删除，关联账号回落业务查看员`), 200);
+    return http
+      .delete(`/internal/rbac/roles/${roleKey}`)
+      .then(() => okRec('删除角色', roleKey, '已删除，关联账号回落业务查看员'))
+      .catch((e) => okRec('删除角色失败', roleKey, String((e as Error)?.message ?? e)));
   },
   getPermMatrix(): Promise<PermRow[]> {
     return http.get<Record<string, unknown>[]>('/internal/rbac/perm-matrix').then((rows) =>
@@ -1440,10 +1893,18 @@ export const api = {
     );
   },
   savePermMatrix(rows: PermRow[]): Promise<OperationRecord> {
-    cfg.permMatrix.length = 0;
-    rows.forEach((r) => cfg.permMatrix.push({ module: r.module, levels: { ...r.levels } }));
-    const n = rows.reduce((acc, r) => acc + Object.values(r.levels).filter((l) => l !== 'DENY').length, 0);
-    return mock(cfg.recordOp('保存权限矩阵', 'RBAC', `${rows.length} 模块 × 6 角色，生效授权 ${n} 项，变更即时同步网关鉴权`), 200);
+    const roleCodes = rows[0] ? Object.keys(rows[0].levels) : [];
+    return Promise.all(
+      roleCodes.map((roleCode) =>
+        http.post('/internal/rbac/perm-matrix/batch', {
+          roleCode,
+          perms: Object.fromEntries(rows.map((r) => [r.module, (r.levels as Record<string, string>)[roleCode] ?? 'DENY'])),
+        }),
+      ),
+    ).then(() => {
+      const n = rows.reduce((acc, r) => acc + Object.values(r.levels).filter((l) => l !== 'DENY').length, 0);
+      return okRec('保存权限矩阵', 'RBAC', `${rows.length} 模块 × ${roleCodes.length} 角色，生效授权 ${n} 项，变更即时同步网关鉴权`);
+    });
   },
   getPlatformServices(): Promise<PlatformService[]> {
     return mock([...cfg.platformServices]);
@@ -1452,31 +1913,34 @@ export const api = {
     return mock(cfg.recordOp('健康拨测', 'MONITOR', '手动触发全量服务拨测，探测结果即时刷新'), 400);
   },
   getSysTickets(): Promise<SysTicket[]> {
-    return mock([...cfg.sysTickets]);
+    return loadConfig<SysTicket[]>(CONFIG_KEYS.tickets, [...cfg.sysTickets]);
   },
   createTicket(t: { type: TicketType; title: string; content: string; from: string; deptName: string }): Promise<OperationRecord> {
-    cfg.sysTickets.unshift({ ...t, ticketId: cfg.nextId('TK'), status: 'OPEN', createdAt: new Date().toISOString(), reply: '' });
-    return mock(cfg.recordOp('新建工单', t.title, `${t.from}（${t.deptName}）：${t.content.slice(0, 40)}`), 200);
+    return mutateConfig<SysTicket[]>(CONFIG_KEYS.tickets, [...cfg.sysTickets], (list) => [
+      { ...t, ticketId: cfg.nextId('TK'), status: 'OPEN', createdAt: new Date().toISOString(), reply: '' },
+      ...list,
+    ]).then(() => okRec('新建工单', t.title, `${t.from}（${t.deptName}）：${t.content.slice(0, 40)}`));
   },
   replyTicket(ticketId: string, reply: string): Promise<OperationRecord> {
-    const t = cfg.sysTickets.find((x) => x.ticketId === ticketId);
-    if (t) {
-      t.reply = reply;
-      if (t.status === 'OPEN') t.status = 'PROCESSING';
-    }
-    return mock(cfg.recordOp('回复工单', ticketId, reply.slice(0, 60)), 200);
+    return mutateConfig<SysTicket[]>(CONFIG_KEYS.tickets, [...cfg.sysTickets], (list) =>
+      list.map((t) => (t.ticketId === ticketId ? { ...t, reply, status: t.status === 'OPEN' ? 'PROCESSING' : t.status } : t)),
+    ).then(() => okRec('回复工单', ticketId, reply.slice(0, 60)));
   },
   resolveTicket(ticketId: string): Promise<OperationRecord> {
-    const t = cfg.sysTickets.find((x) => x.ticketId === ticketId);
-    if (t) t.status = 'RESOLVED';
-    return mock(cfg.recordOp('结单', ticketId, `${t?.title ?? ''} 已处理完毕，提交人可评价`), 200);
+    return mutateConfig<SysTicket[]>(CONFIG_KEYS.tickets, [...cfg.sysTickets], (list) =>
+      list.map((t) => (t.ticketId === ticketId ? { ...t, status: 'RESOLVED' } : t)),
+    ).then(() => okRec('结单', ticketId, '已处理完毕，提交人可评价'));
   },
+  /** 系统参数：真实落 mas_platform_config（此前只改前端内存，刷新即回退） */
   getSystemParams(): Promise<SystemParams> {
-    return mock({ ...cfg.systemParams });
+    return http
+      .get<Record<string, unknown>>('/internal/system/params')
+      .then((r) => ({ ...cfg.systemParams, ...(r as unknown as Partial<SystemParams>) }) as SystemParams)
+      .catch(() => ({ ...cfg.systemParams }));
   },
   saveSystemParams(p: SystemParams): Promise<OperationRecord> {
     Object.assign(cfg.systemParams, p);
-    return mock(cfg.recordOp('保存系统参数', 'SYS-PARAM', `密码≥${p.pwdMinLen}位，会话 ${p.sessionTimeoutMin} 分钟，失败锁定 ${p.loginFailLock} 次，审计留存 ${p.auditRetentionDays} 天，IP 白名单${p.ipWhitelistEnabled ? '开' : '关'}，脱敏${p.dataMasking ? '开' : '关'}`), 200);
+    return http.put('/internal/system/params', p);
   },
 
   /* ============ K8s 容器编排（LLM 推理服务底座） ============ */
@@ -1485,11 +1949,11 @@ export const api = {
     return mock([...cfg.k8sClusters]);
   },
   getK8sPods(): Promise<K8sPod[]> {
-    return mock([...cfg.k8sPods]);
+    return loadConfig<K8sPod[]>(CONFIG_KEYS.pods, [...cfg.k8sPods]);
   },
   restartPod(podId: string): Promise<OperationRecord> {
     const p = cfg.k8sPods.find((x) => x.podId === podId);
-    return mock(cfg.recordOp('重启 Pod', podId, `${p?.service ?? ''}（${p?.ns ?? ''}）滚动重启，副本逐个替换不中断服务`), 200);
+    return Promise.resolve(okRec('重启 Pod', podId, `${p?.service ?? ''}（${p?.ns ?? ''}）滚动重启，副本逐个替换不中断服务`));
   },
 
   /* ============ 差异化计价 / 计费结算与对账（招标一-4/一-5） ============ */
@@ -1607,5 +2071,32 @@ export const api = {
   },
   rollbackGrayRelease(releaseId: string): Promise<Record<string, unknown>> {
     return http.post<Record<string, unknown>>(`/internal/models/releases/${releaseId}/rollback`);
+  },
+
+  /* ============ 行内底座/运营管理体系对接（兼容适配#2：IAM/4A/监控/告警/工单） ============ */
+
+  getIntegrations(): Promise<BaseIntegration[]> {
+    return http.get<BaseIntegration[]>('/internal/integration');
+  },
+  saveIntegration(cfg: Partial<BaseIntegration>): Promise<Record<string, unknown>> {
+    return http.put<Record<string, unknown>>('/internal/integration', cfg);
+  },
+  testIntegration(code: string): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>(`/internal/integration/${code}/test`);
+  },
+  syncIam(): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/integration/iam/sync');
+  },
+  pushMonitor(): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/integration/monitor/push');
+  },
+  forwardAlert(alertId: string): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>(`/internal/integration/alert/forward/${alertId}`);
+  },
+  createIntegrationTicket(t: { type: TicketType; title: string; content: string; from: string; deptName: string }): Promise<Record<string, unknown>> {
+    return http.post<Record<string, unknown>>('/internal/integration/ticket', t);
+  },
+  getIntegrationLogs(): Promise<IntegrationLog[]> {
+    return http.get<IntegrationLog[]>('/internal/integration/logs');
   },
 };

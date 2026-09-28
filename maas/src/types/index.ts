@@ -576,6 +576,15 @@ export interface ArchiveRules {
   compliance: boolean;
 }
 
+/** 模型下线前依赖检查（识别仍在调用该模型的应用，避免静默打断在用业务） */
+export interface ModelDependencyCheck {
+  modelId: string;
+  windowDays: number;
+  dependentCount: number;
+  dependentApps: { appId: string; calls: number; lastCallAt: string }[];
+  safeToOffline: boolean;
+}
+
 /** 安全护栏规则（P44） */
 export interface GuardrailConfig {
   enabled: boolean;
@@ -1038,6 +1047,30 @@ export interface SysTicket {
   status: TicketStatus;
   createdAt: string;
   reply: string; // 处理回复
+}
+
+/** 行内底座对接点（IAM / 4A / 统一监控 / 告警平台 / 工单系统） */
+export type IntegrationType = 'IAM' | 'FOUR_A' | 'MONITOR' | 'ALERT' | 'TICKET';
+export type IntegrationStatus = 'PENDING' | 'CONNECTED' | 'UNREACHABLE' | 'DISABLED' | 'UNCONFIGURED' | 'ERROR';
+export interface BaseIntegration {
+  code: string;
+  name: string;
+  type: IntegrationType;
+  endpoint: string | null;
+  enabled: number; // 0 未启用外部对接 / 1 启用真实外呼
+  lastSyncAt: string | null;
+  status: IntegrationStatus;
+  remark: string | null;
+}
+export interface IntegrationLog {
+  id: number;
+  intCode: string;
+  action: 'SYNC_IAM' | 'PUSH_MONITOR' | 'FORWARD_ALERT' | 'CREATE_TICKET' | 'TEST';
+  status: 'OK' | 'FAIL';
+  message: string | null;
+  latencyMs: number | null;
+  operator: string | null;
+  createdAt: string | null;
 }
 
 /** 系统参数（安全与合规基线） */

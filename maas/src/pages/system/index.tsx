@@ -3,9 +3,10 @@ import { useSearchParams } from 'react-router-dom';
 import UserPanel from './UserPanel';
 import { RolePanel, PermPanel } from './RolePermPanel';
 import { MonitorPanel, TicketPanel, ParamsPanel } from './OpsPanels';
+import BaseIntegrationPanel from './BaseIntegrationPanel';
 import AuditLogCenter from '../security/AuditLogCenter';
 
-/** 系统管理：用户/角色/权限/监控/工单/日志/参数（侧边栏子菜单直达，按 URL 参数渲染） */
+/** 系统管理：用户/角色/权限/监控/工单/日志/参数/行内对接（侧边栏子菜单直达，按 URL 参数渲染） */
 export default function System() {
   const [params] = useSearchParams();
   const [tab, setTab] = useState(params.get('tab') ?? 'users');
@@ -24,6 +25,8 @@ export default function System() {
         <MonitorPanel />
       ) : tab === 'tickets' ? (
         <TicketPanel />
+      ) : tab === 'base' ? (
+        <BaseIntegrationPanel />
       ) : tab === 'logs' ? (
         <AuditLogCenter />
       ) : tab === 'params' ? (

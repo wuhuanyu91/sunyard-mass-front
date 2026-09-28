@@ -20,6 +20,9 @@ const COST_LABEL: Record<HeteroVendor['costTag'], { label: string; cls: string }
   HIGH: { label: '高成本', cls: 'text-danger' },
 };
 
+// 兜底：后端返回未知/缺失状态时不要崩溃（无 ErrorBoundary 时单点崩溃会卸载整页）
+const BADGE_FALLBACK = { label: '未知', cls: 'bg-border-default/40 text-text-secondary' };
+
 function utilTone(u: number) {
   if (u >= 85) return 'bg-danger';
   if (u >= 70) return 'bg-warning';
@@ -40,8 +43,8 @@ export function HeteroMatrix() {
 
   if (loading) return <div className="panel h-52 animate-pulse" />;
 
-  const domesticCount = vendors.filter((v) => v.domestic).reduce((s, v) => s + v.count, 0);
-  const totalCount = vendors.reduce((s, v) => s + v.count, 0);
+  const domesticCount = vendors.filter((v) => v.domestic).reduce((s, v) => s + (v.count ?? 0), 0);
+  const totalCount = vendors.reduce((s, v) => s + (v.count ?? 0), 0);
 
   return (
     <Panel
@@ -57,8 +60,8 @@ export function HeteroMatrix() {
       }
     >
       <div className="grid grid-cols-3 gap-2.5">
-        {vendors.map((v) => (
-          <div key={v.vendorId} className="rounded-lg border border-border-default bg-panel-soft p-3">
+        {vendors.map((v, i) => (
+          <div key={v.vendorId || `vendor-${i}`} className="rounded-lg border border-border-default bg-panel-soft p-3">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 text-sm font-medium text-text-primary">
                 {v.kind === 'CPU' ? <Cpu size={14} className="text-text-secondary" /> : <ServerCog size={14} className="text-primary" />}
@@ -94,10 +97,10 @@ export function HeteroMatrix() {
                 <div className="text-text-secondary">承载模型</div>
               </div>
             </div>
-            {/* 状态行 */}
+            {/* 状态行（未知枚举回落 BADGE_FALLBACK，防单点崩溃卸载整页） */}
             <div className="mt-2 flex items-center justify-between text-[10px]">
-              <span className={`rounded px-1.5 py-0.5 ${COMPAT_LABEL[v.compatStatus].cls}`}>{COMPAT_LABEL[v.compatStatus].label}</span>
-              <span className={COST_LABEL[v.costTag].cls}>{COST_LABEL[v.costTag].label}</span>
+              <span className={`rounded px-1.5 py-0.5 ${(COMPAT_LABEL[v.compatStatus] ?? BADGE_FALLBACK).cls}`}>{(COMPAT_LABEL[v.compatStatus] ?? BADGE_FALLBACK).label}</span>
+              <span className={(COST_LABEL[v.costTag] ?? BADGE_FALLBACK).cls}>{(COST_LABEL[v.costTag] ?? BADGE_FALLBACK).label}</span>
               <span className="font-mono text-text-secondary/70">{v.pools.join(', ')}</span>
             </div>
           </div>
@@ -157,12 +160,13 @@ export function HeteroSchedPanel() {
             {policy.vendorPriority.map((id, i) => {
               const v = vendors.find((x) => x.vendorId === id);
               if (!v) return null;
+              const badge = COMPAT_LABEL[v.compatStatus] ?? BADGE_FALLBACK;
               return (
                 <div key={id} className="flex items-center gap-2 rounded border border-border-default bg-bg-page px-2.5 py-1.5 text-xs">
                   <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${i === 0 ? 'bg-primary/15 text-primary' : 'bg-panel text-text-secondary'}`}>{i + 1}</span>
                   <span className="text-text-primary">{v.vendor} {v.chip}</span>
                   {v.domestic && <span className="rounded bg-danger/10 px-1 text-[10px] text-danger">国产</span>}
-                  <span className={`ml-auto rounded px-1.5 py-0.5 text-[10px] ${COMPAT_LABEL[v.compatStatus].cls}`}>{COMPAT_LABEL[v.compatStatus].label}</span>
+                  <span className={`ml-auto rounded px-1.5 py-0.5 text-[10px] ${badge.cls}`}>{badge.label}</span>
                 </div>
               );
             })}
