@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Search, FileLock2, Download, Eye, EyeOff, Hash } from 'lucide-react';
 import { api } from '../../services/api';
 import type { PlatformSummary } from '../../services/api';
-import type { AlertAction, PlatformAlert, RouterLog, SecurityEvent } from '../../types';
+import type { AlertAction, PlatformAlert, RouterLog, SecurityEvent, TenantOrg } from '../../types';
 import Panel from '../../components/ui/Panel';
 import PageHeader from '../../components/ui/PageHeader';
 import KpiStrip from '../../components/ui/KpiStrip';
@@ -47,11 +47,13 @@ const LEVEL_COLOR: Record<string, string> = {
   CRITICAL: '#ef4444',
 };
 
-/** 租户 × 角色权限矩阵（6.7.2：RBAC 视图） */
-const TENANT_MATRIX: { tenant: string; roles: { role: string; level: 'full' | 'partial' | 'none'; note: string }[] }[] = [
-  { tenant: 'TENANT-RETAIL', roles: [{ role: 'ADMIN', level: 'full', note: '全量' }, { role: 'OPERATOR', level: 'full', note: '全量' }, { role: 'MODEL_OWNER', level: 'partial', note: '本租户模型' }, { role: 'AUDITOR', level: 'partial', note: '本租户审计' }, { role: 'BIZ_VIEWER', level: 'none', note: '无' }] },
-  { tenant: 'TENANT-CORP', roles: [{ role: 'ADMIN', level: 'partial', note: '租户管理员' }, { role: 'OPERATOR', level: 'partial', note: '租户运营' }, { role: 'MODEL_OWNER', level: 'partial', note: '本租户模型' }, { role: 'AUDITOR', level: 'none', note: '无' }, { role: 'BIZ_VIEWER', level: 'full', note: '部门视图' }] },
-  { tenant: 'TENANT-TECH', roles: [{ role: 'ADMIN', level: 'full', note: '平台管理员' }, { role: 'OPERATOR', level: 'full', note: '全量' }, { role: 'MODEL_OWNER', level: 'full', note: '全量' }, { role: 'AUDITOR', level: 'full', note: '全量' }, { role: 'BIZ_VIEWER', level: 'partial', note: '信息科技部视图' }] },
+/** 各角色的平台默认授权级别（6.7.2：RBAC 视图）；租户行来自后端 /internal/tenants 实时数据 */
+const ROLE_LEVEL_TEMPLATE: { role: string; level: 'full' | 'partial' | 'none'; note: string }[] = [
+  { role: 'ADMIN', level: 'full', note: '全量' },
+  { role: 'OPERATOR', level: 'full', note: '全量' },
+  { role: 'MODEL_OWNER', level: 'partial', note: '本租户模型' },
+  { role: 'AUDITOR', level: 'partial', note: '本租户审计' },
+  { role: 'BIZ_VIEWER', level: 'none', note: '无' },
 ];
 
 /** 6.7 安全运行中心（V4：页内 Tab 已上提为侧边栏子菜单，本页按 URL 参数渲染对应视图） */
@@ -100,6 +102,7 @@ function SecurityOverview() {
   const [alertActions, setAlertActions] = useState<AlertAction[]>([]);
   const [alertDialog, setAlertDialog] = useState<{ alert: PlatformAlert; action: AlertAction['action'] } | null>(null);
   const [alertNote, setAlertNote] = useState('');
+  const [tenantOrgs, setTenantOrgs] = useState<TenantOrg[]>([]);
 
   useEffect(() => {
     // 任一接口失败都降级为空数据，避免 Promise.all 整体 reject 导致页面永久 loading / 白屏
@@ -109,13 +112,15 @@ function SecurityOverview() {
       api.getRouterLogs().catch(() => [] as RouterLog[]),
       api.getSummary().catch(() => null as PlatformSummary | null),
       api.getAlertActions().catch(() => [] as AlertAction[]),
+      api.getTenantOrgs().catch(() => [] as TenantOrg[]),
     ])
-      .then(([ev, al, lg, su, aa]) => {
+      .then(([ev, al, lg, su, aa, to]) => {
         setEvents(Array.isArray(ev) ? ev : []);
         setAlerts(Array.isArray(al) ? al : []);
         setLogs(Array.isArray(lg) ? lg : []);
         setSummary(su);
         setAlertActions(Array.isArray(aa) ? aa : []);
+        setTenantOrgs(Array.isArray(to) ? to : []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -136,14 +141,62 @@ function SecurityOverview() {
 
   const stats = useMemo(() => {
     const s = summary ?? { securityEvents: 0, maskedEvents: 0, criticalEvents: 0, blocked: 0 };
-    const levelDist = [
-      { name: 'INFO', value: 17 },
-      { name: 'WARN', value: 18 },
-      { name: 'ERROR', value: 2 },
-      { name: 'CRITICAL', value: 1 },
-    ];
+    // 等级分布按已加载的真实事件统计（不再写死演示数值）
+    const byLevel = new Map<string, number>();
+    for (const e of events) byLevel.set(e.eventLevel, (byLevel.get(e.eventLevel) ?? 0) + 1);
+    const levelDist = (['INFO', 'WARN', 'ERROR', 'CRITICAL'] as const).map((name) => ({
+      name,
+      value: byLevel.get(name) ?? 0,
+    }));
     return { total: s.securityEvents, blocked: s.blocked, masked: s.maskedEvents, critical: s.criticalEvents, levelDist };
-  }, [summary]);
+  }, [summary, events]);
+
+  /** 导出审计包：真实生成 JSON 文件下载（含 manifest.sha256 防篡改签名），替代此前的 alert 假成功 */
+  const exportAuditPackage = async () => {
+    const rows = events.map((e) => ({
+      securityEventId: e.securityEventId,
+      traceId: e.traceId,
+      tenantId: e.tenantId,
+      userId: e.userId,
+      appId: e.appId,
+      assetId: e.assetId,
+      eventType: e.eventType,
+      eventLevel: e.eventLevel,
+      guardrailStage: e.guardrailStage,
+      ruleId: e.ruleId,
+      reasonCode: e.reasonCode,
+      masked: e.masked,
+      blocked: e.blocked,
+      logStorageType: e.logStorageType,
+      hashSignature: e.hashSignature,
+      createdAt: e.createdAt,
+    }));
+    // 脱敏说明：MASKED/HASH_ONLY 事件原文不导出，仅导出摘要字段（上面字段清单本身不含原文）
+    const payload = JSON.stringify(rows, null, 2);
+    let manifestSha256 = '';
+    try {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload));
+      manifestSha256 = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    } catch {
+      manifestSha256 = 'unavailable';
+    }
+    const pkg = {
+      exportedAt: new Date().toISOString(),
+      range: '近 24h 全部安全事件',
+      rowCount: rows.length,
+      manifestSha256,
+      rows,
+    };
+    const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit-package-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setExportOpen(false);
+    notify.success(`审计包已生成并下载（${rows.length} 条事件，manifest.sha256=${manifestSha256.slice(0, 16)}…）`);
+  };
 
   const filteredEvents = useMemo(
     () =>
@@ -216,22 +269,32 @@ function SecurityOverview() {
               </tr>
             </thead>
             <tbody>
-              {TENANT_MATRIX.map((row) => (
-                <tr key={row.tenant} className="border-b border-border-default/30 last:border-0">
-                  <td className="py-2 pr-3 font-mono text-text-primary">{row.tenant}</td>
-                  {row.roles.map((r) => (
+              {tenantOrgs.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-4 text-center text-text-secondary">未加载到租户数据（后端不可达或未配置租户）</td>
+                </tr>
+              )}
+              {tenantOrgs.map((org) => (
+                <tr key={org.tenantId} className={`border-b border-border-default/30 last:border-0 ${org.status === 'SUSPENDED' ? 'opacity-50' : ''}`}>
+                  <td className="py-2 pr-3 font-mono text-text-primary">
+                    {org.tenantId}
+                    {org.status === 'SUSPENDED' && <span className="ml-2 rounded bg-danger/15 px-1.5 py-0.5 text-[10px] text-danger">已停用</span>}
+                  </td>
+                  {ROLE_LEVEL_TEMPLATE.map((r) => (
                     <td key={r.role} className="px-2 py-2 text-center">
                       <span
-                        title={r.note}
+                        title={org.status === 'SUSPENDED' ? '租户已停用，权限即时收回' : r.note}
                         className={`inline-block rounded px-1.5 py-0.5 ${
-                          r.level === 'full'
+                          org.status === 'SUSPENDED'
+                            ? 'bg-panel-soft text-text-secondary/50'
+                            : r.level === 'full'
                             ? 'bg-success/15 text-success'
                             : r.level === 'partial'
                               ? 'bg-warning/15 text-warning'
                               : 'bg-panel-soft text-text-secondary/50'
                         }`}
                       >
-                        {r.level === 'full' ? '●' : r.level === 'partial' ? '◐' : '○'} {r.note}
+                        {org.status === 'SUSPENDED' ? '○ 已收回' : `${r.level === 'full' ? '●' : r.level === 'partial' ? '◐' : '○'} ${r.note}`}
                       </span>
                     </td>
                   ))}
@@ -533,10 +596,7 @@ function SecurityOverview() {
                 取消
               </button>
               <button
-                onClick={() => {
-                  setExportOpen(false);
-                  window.alert('审计包已生成（含 manifest.sha256 签名清单），已归档至审计留存服务并同步至合规系统');
-                }}
+                onClick={() => { void exportAuditPackage(); }}
                 className="rounded bg-primary/15 px-3 py-1.5 text-xs text-primary hover:bg-primary/25"
               >
                 确认导出

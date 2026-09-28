@@ -31,6 +31,9 @@ import Drawer from '../components/ui/Drawer';
 import { Modal, ConfirmDialog, BTN_PRIMARY, BTN_GHOST } from '../components/ui/Modal';
 import { useNotify } from '../components/ui/Toast';
 import { api } from '../services/api';
+import { ADMIN_TOKEN_KEY, setAdminToken } from '../services/http';
+
+import type { LoginResult } from '../services/api';
 import type { ApprovalItem, Announcement } from '../types';
 import type { PlatformSummary } from '../services/api';
 import logoUrl from '../assets/logo.png';
@@ -234,9 +237,11 @@ export default function MainLayout() {
     return () => clearInterval(t);
   }, []);
 
-  /* 账号菜单与登录态（内存态：默认未登录，访问任意路径先展示登录页，登录后进入平台） */
+  /* 登录态（真实身份认证：后端验证用户名+密码签发令牌；会话恢复依赖本地保存的用户信息） */
   const notify = useNotify();
   const [authed, setAuthed] = useState(false);
+  const [me, setMe] = useState<Pick<LoginResult, 'userCode' | 'userName' | 'roles'> | null>(null);
+  const USER_KEY = 'mas_admin_user';
   const [userMenu, setUserMenu] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -244,18 +249,47 @@ export default function MainLayout() {
   const [pwd, setPwd] = useState({ old: '', next: '', confirm: '' });
   const [pwdErr, setPwdErr] = useState('');
 
-  /** 修改密码校验（与系统参数基线一致：≥10 位 + 含字母与数字） */
+  /** 修改密码校验（与系统参数基线一致：≥10 位 + 含字母与数字），真实落库 */
   const submitPwd = () => {
     if (!pwd.old) { setPwdErr('请输入当前密码'); return; }
     if (pwd.next.length < 10) { setPwdErr('新密码至少 10 位（系统安全基线）'); return; }
     if (!/[a-zA-Z]/.test(pwd.next) || !/\d/.test(pwd.next)) { setPwdErr('新密码须同时包含字母与数字'); return; }
     if (pwd.next !== pwd.confirm) { setPwdErr('两次输入的新密码不一致'); return; }
-    api.changeMyPassword('100001').then(() => {
+    api.changePassword(pwd.old, pwd.next).then(() => {
       notify.success('密码修改成功，下次登录请使用新密码');
       setPwdOpen(false);
       setPwd({ old: '', next: '', confirm: '' });
       setPwdErr('');
+    }).catch((e: { message?: string }) => {
+      setPwdErr(e?.message ?? '密码修改失败，请稍后重试');
     });
+  };
+
+  /** 会话恢复：本地保存了登录用户即视为已认证（令牌有效性由后端 401 兜底） */
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(USER_KEY);
+      if (saved) {
+        setMe(JSON.parse(saved));
+        setAuthed(true);
+      }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleLogin = (user: Pick<LoginResult, 'userCode' | 'userName' | 'roles'>) => {
+    setMe(user);
+    try { localStorage.setItem(USER_KEY, JSON.stringify(user)); } catch { /* ignore */ }
+    setAuthed(true);
+    notify.success('登录成功，欢迎回来');
+  };
+
+  const handleLogout = () => {
+    api.logout().catch(() => { /* 吊销失败不阻塞登出（令牌自身有过期时间） */ });
+    try { localStorage.removeItem(USER_KEY); } catch { /* ignore */ }
+    try { localStorage.removeItem(ADMIN_TOKEN_KEY); } catch { /* ignore */ }
+    setMe(null);
+    setAuthed(false);
   };
 
   useEffect(() => {
@@ -268,9 +302,9 @@ export default function MainLayout() {
     document.documentElement.classList.toggle('console-page', !isBigscreen(location.pathname));
   }, [location.pathname]);
 
-  /* 未登录态：展示登录页（会话级，刷新后恢复；必须位于全部 hooks 之后） */
+  /* 未登录态：展示登录页（真实身份认证；必须位于全部 hooks 之后） */
   if (!authed) {
-    return <LoginScreen onLogin={() => { setAuthed(true); notify.success('登录成功，欢迎回来'); }} />;
+    return <LoginScreen onLogin={handleLogin} />;
   }
 
   const openApprovals = () => {
@@ -418,8 +452,8 @@ export default function MainLayout() {
             aria-haspopup="menu"
             aria-expanded={userMenu}
           >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-primary to-indigo-500 text-[10px] font-bold text-white">赵</span>
-            <span>平台管理员</span>
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-primary to-indigo-500 text-[10px] font-bold text-white">{(me?.userName ?? '管').slice(0, 1)}</span>
+            <span>{me?.userName ?? '平台管理员'}</span>
             <ChevronDown size={12} className={`transition-transform ${userMenu ? 'rotate-180' : ''}`} />
           </button>
         </div>
@@ -431,10 +465,10 @@ export default function MainLayout() {
           <div className="fixed inset-0 z-[60]" onClick={() => setUserMenu(false)} aria-hidden />
           <div className="modal-in fixed right-3 top-[60px] z-[70] w-60 overflow-hidden rounded-lg border border-border-default bg-bg-panel shadow-2xl" role="menu">
             <div className="flex items-center gap-2.5 border-b border-border-default bg-bg-panel-soft px-3.5 py-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-indigo-500 text-xs font-bold text-white">赵</span>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-indigo-500 text-xs font-bold text-white">{(me?.userName ?? '用').slice(0, 1)}</span>
               <div className="min-w-0">
-                <div className="text-sm font-medium text-text-primary">赵总</div>
-                <div className="mt-0.5 truncate font-mono text-[10px] text-text-secondary">100001 · 超级管理员</div>
+                <div className="text-sm font-medium text-text-primary">{me?.userName ?? '已登录用户'}</div>
+                <div className="mt-0.5 truncate font-mono text-[10px] text-text-secondary">{me?.userCode ?? '-'} · {me?.roles?.[0] ?? '-'}</div>
               </div>
             </div>
             <div className="p-1.5">
@@ -456,10 +490,10 @@ export default function MainLayout() {
       {/* 个人资料 */}
       <Modal open={profileOpen} onClose={() => setProfileOpen(false)} title="个人资料" width={420}>
         <div className="flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-primary to-indigo-500 text-base font-bold text-white">赵</span>
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-primary to-indigo-500 text-base font-bold text-white">{(me?.userName ?? '用').slice(0, 1)}</span>
           <div>
-            <div className="text-sm font-semibold text-text-primary">赵总 <span className="ml-1 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger">超级管理员</span></div>
-            <div className="mt-1 font-mono text-xs text-text-secondary">100001 · M-001</div>
+            <div className="text-sm font-semibold text-text-primary">{me?.userName ?? '已登录用户'} <span className="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{me?.roles?.[0] ?? '-'}</span></div>
+            <div className="mt-1 font-mono text-xs text-text-secondary">{me?.userCode ?? '-'}{me?.roles?.includes('ADMIN') ? ' · 全模块管理' : ''}</div>
           </div>
         </div>
         <div className="mt-4 space-y-2 text-xs">
@@ -520,7 +554,7 @@ export default function MainLayout() {
         message="退出后需重新通过身份认证登录，未保存的表单内容将丢失。确认退出？"
         confirmText="退出登录"
         onCancel={() => setLogoutConfirm(false)}
-        onConfirm={() => { setLogoutConfirm(false); setAuthed(false); }}
+        onConfirm={handleLogout}
       />
 
       {/* 事件广播横幅（规范 4.3） */}
@@ -830,8 +864,8 @@ export default function MainLayout() {
 }
 
 /** 登录页（默认入口/退出后展示；左紫蓝插画约 3/5 + 右浅色表单区，固定浅色视觉，不随主题切换） */
-function LoginScreen({ onLogin }: { onLogin: () => void }) {
-  const [acc, setAcc] = useState('100001');
+function LoginScreen({ onLogin }: { onLogin: (user: Pick<LoginResult, 'userCode' | 'userName' | 'roles'>) => void }) {
+  const [acc, setAcc] = useState('admin');
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
   const [logging, setLogging] = useState(false);
@@ -839,11 +873,17 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
     if (logging) return;
     if (!acc.trim()) { setErr('请输入账号'); return; }
     if (!pw) { setErr('请输入密码'); return; }
-    if (pw !== '000000') { setErr('密码错误，初始密码为 000000'); return; }
     setErr('');
     setLogging(true);
-    /* 演示态：模拟身份认证耗时，登录后进入平台 */
-    window.setTimeout(() => onLogin(), 700);
+    /* 真实身份认证：后端验证用户名+密码（SHA-256 比对），通过后签发访问令牌；
+       连续失败 5 次账号自动锁定；登录行为全程审计留痕 */
+    api.login(acc.trim(), pw).then((res) => {
+      setAdminToken(res.token);
+      onLogin({ userCode: res.userCode, userName: res.userName, roles: res.roles ?? [] });
+    }).catch((e: { message?: string }) => {
+      setErr(e?.message ?? '登录失败，请稍后重试');
+      setLogging(false);
+    });
   };
   return (
     <div className="flex min-h-screen bg-[#f4f6f9]">
@@ -932,7 +972,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
                   value={pw}
                   onChange={(e) => setPw(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && submit()}
-                  placeholder="请输入密码（初始 000000）"
+                  placeholder="请输入密码（初始 Mas@123456）"
                   aria-label="密码"
                   className="w-full rounded-md border border-[#d9dee6] bg-white py-2.5 pl-10 pr-3.5 text-sm text-[#1f2937] shadow-sm outline-none transition-all placeholder:text-[#9aa3af] focus:border-[#2563e9] focus:ring-2 focus:ring-[#2563e9]/15"
                 />
@@ -953,7 +993,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
                 '登 录'
               )}
             </button>
-            <p className="text-[11px] leading-relaxed text-[#8a8f99]">初始密码 000000，登录后请及时修改；登录行为全程审计留痕，连续失败 5 次自动锁定。</p>
+            <p className="text-[11px] leading-relaxed text-[#8a8f99]">演示账号 admin / operator / auditor，初始密码 Mas@123456，登录后请及时修改；登录行为全程审计留痕，连续失败 5 次自动锁定。</p>
             <p className="pt-4 text-center text-[11px] leading-relaxed text-[#8a8f99]/70">
               © 2026 信雅达 · 星舰智能 STARSHIP · STARSHIP-MAAS 平台
             </p>

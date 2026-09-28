@@ -79,12 +79,13 @@ function buildUrl(path: string, params?: Record<string, string | number | boolea
 
 /**
  * 管理端点令牌（后端 /internal/* 已启用 AdminAuthFilter 强制认证）
- * 优先取 localStorage；其次取构建期环境变量 VITE_ADMIN_TOKEN（生产必须注入强令牌）；
- * 缺省使用演示令牌 mat-demo-admin-token（仅限本地开发）
+ * 取 localStorage（真实登录 /internal/auth/login 签发的短时效令牌，见 MainLayout.setAdminToken）；
+ * 构建期可注入 VITE_ADMIN_TOKEN 作为自动化/预览用途的引导令牌。
+ * 不再有缺省演示令牌：未登录且未注入时请求将得到 401，由登录页接管。
  */
 export const ADMIN_TOKEN_KEY = 'mas_admin_token';
 const BUILD_ADMIN_TOKEN = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_ADMIN_TOKEN;
-export const DEFAULT_ADMIN_TOKEN = (BUILD_ADMIN_TOKEN && BUILD_ADMIN_TOKEN.trim()) || 'mat-demo-admin-token';
+export const DEFAULT_ADMIN_TOKEN = (BUILD_ADMIN_TOKEN && BUILD_ADMIN_TOKEN.trim()) || '';
 
 export function getAdminToken(): string {
   try {

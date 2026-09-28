@@ -17,18 +17,6 @@ const PRESET_PROMPTS = [
   '生成一条面向年轻客群的信用卡营销文案（合规口径）',
 ];
 
-/** 按模型能力档位生成不同风格回复文本 */
-function mockReply(model: ModelAsset, prompt: string): string {
-  const tier = model.costPer1kTokens >= 0.8 ? 'large' : model.costPer1kTokens >= 0.2 ? 'mid' : 'small';
-  if (tier === 'large') {
-    return `【${model.assetName}】针对您的请求：「${prompt.slice(0, 28)}…」\n\n结论要点：\n1. 该请求涉及信贷业务合规表述，需同步引用监管口径；\n2. 建议先校验客户身份与授权链路，再输出业务结论；\n3. 已结合本行风控语料微调，术语与行内规范一致。\n\n（72B 级模型：推理深度高、成本较高，适合复杂推理与长文档场景）`;
-  }
-  if (tier === 'mid') {
-    return `【${model.assetName}】已处理：「${prompt.slice(0, 28)}…」\n\n回复：按行内标准话术模板生成，已规避收益承诺类表述，合规检查通过。\n\n（14B 级模型：成本与效果均衡，适合问答/摘要/分类主力场景）`;
-  }
-  return `【${model.assetName}】识别意图：${prompt.slice(0, 12)}… → 分类=业务咨询，置信度 0.97。（小模型：毫秒级响应，适合前置分流与确定性计算）`;
-}
-
 interface RunState {
   text: string;
   running: boolean;
@@ -66,24 +54,36 @@ export default function Playground() {
     timers.current = [];
   };
 
-  /** 流式输出（逐字渲染，耗时与模型时延画像挂钩） */
+  /** 真实调用 /v1/chat/completions，返回后对真实内容做流式渲染 */
   const stream = (model: ModelAsset, setter: (s: RunState) => void) => {
-    const full = mockReply(model, prompt);
-    const stepChars = model.costPer1kTokens >= 0.8 ? 2 : 4; // 大模型逐字更慢更真实
-    const tickMs = Math.max(18, Math.round(model.avgLatencyMs / 40));
-    let i = 0;
     const startAt = Date.now();
     setter({ text: '', running: true, done: false, elapsedMs: 0, outTokens: 0 });
-    const t = window.setInterval(() => {
-      i = Math.min(full.length, i + stepChars);
-      const text = full.slice(0, i);
-      setter({ text, running: i < full.length, done: i >= full.length, elapsedMs: Date.now() - startAt, outTokens: Math.round(text.length / 1.6) });
-      if (i >= full.length) {
-        clearInterval(t);
-        timers.current = timers.current.filter((x) => x !== t);
-      }
-    }, tickMs);
-    timers.current.push(t);
+    api
+      .playgroundChat(model.assetId, prompt, { temperature, maxTokens })
+      .then(({ content, outTokens }) => {
+        const full = content || '（模型返回空内容）';
+        const stepChars = Math.max(2, Math.ceil(full.length / 60));
+        let i = 0;
+        const t = window.setInterval(() => {
+          i = Math.min(full.length, i + stepChars);
+          const text = full.slice(0, i);
+          setter({ text, running: i < full.length, done: i >= full.length, elapsedMs: Date.now() - startAt, outTokens });
+          if (i >= full.length) {
+            clearInterval(t);
+            timers.current = timers.current.filter((x) => x !== t);
+          }
+        }, 20);
+        timers.current.push(t);
+      })
+      .catch((e: unknown) => {
+        setter({
+          text: `体验调用失败：${e instanceof Error ? e.message : String(e)}\n\n请检查：1) maas/.env 是否配置 VITE_PLAYGROUND_API_KEY；2) 该 Key 是否有效且未停用；3) 网关与推理引擎是否可达。`,
+          running: false,
+          done: true,
+          elapsedMs: Date.now() - startAt,
+          outTokens: 0,
+        });
+      });
   };
 
   const run = () => {
@@ -97,7 +97,7 @@ export default function Playground() {
     } else {
       setRunB(null);
     }
-    notify.info('已发起体验调用（体验链路走试算通道，不计入部门结算）');
+    notify.info('已发起体验调用（经网关 /v1/chat/completions 真实转发，用量计入该 Key 所属应用）');
   };
 
   const stop = () => {
@@ -186,7 +186,7 @@ export default function Playground() {
             </div>
             <p className="text-[11px] leading-relaxed text-text-secondary">
               <Sparkles size={11} className="mr-1 inline text-primary" />
-              体验调用走沙箱通道，不占用生产配额；满意后可在模型广场发起正式接入申请。
+              体验调用经网关 /v1/chat/completions 真实转发（需配置体验 Key，用量计入所属应用计量）；满意后可在模型广场发起正式接入申请。
             </p>
           </div>
         </div>

@@ -46,13 +46,30 @@ export default function AuditSearch() {
       hits = pool.filter((l) => l.traceId.toLowerCase() === q.toLowerCase());
     } else if (dim === 'customer') {
       hits = pool.filter((l) => l.userId.toLowerCase() === q.toLowerCase() || l.userId === `U-${q.replace(/\D/g, '')}`);
-      if (hits.length === 0) hits = pool.slice(0, 3); // mock：展示该客户近期链路样本
     } else {
       hits = pool.filter((l) => l.requestId.toLowerCase() === q.toLowerCase());
-      if (hits.length === 0) hits = pool.slice(3, 6);
     }
+    // 检索无命中时如实返回空（不再塞样本冒充结果）
     setResults(hits);
     if (hits.length === 0) notify.info('未检索到匹配记录，请确认时间范围');
+  };
+
+  /** 导出审计包：真实生成该租户留存日志的 CSV 文件下载，替代此前的"归档成功"假提示 */
+  const exportTenantPackage = (t: TenantRetention) => {
+    const rows = logs.filter((l) => l.tenantId === t.tenantId);
+    const header = 'traceId,requestId,tenantId,userId,appId,createdAt,status,model,promptTokens,expectedOutputTokens';
+    const csv = [header, ...rows.map((l) =>
+      [l.traceId, l.requestId, l.tenantId, l.userId, l.appId, l.createdAt, l.status, l.decision?.selectedModel ?? '', l.promptTokens ?? 0, l.expectedOutputTokens ?? 0]
+        .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit-${t.tenantId}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setExportOpen(null);
+    notify.success(`审计包已生成并下载（${rows.length} 条留存日志）`);
   };
 
   const stageNames = ['鉴权', '前置护栏', '路由', '推理', '后置护栏', '响应'];
@@ -203,10 +220,7 @@ export default function AuditSearch() {
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setExportOpen(null)} className={BTN_GHOST}>取消</button>
               <button
-                onClick={() => {
-                  setExportOpen(null);
-                  notify.success('审计包已生成并归档至审计留存服务');
-                }}
+                onClick={() => exportTenantPackage(exportOpen)}
                 className="rounded bg-primary/15 px-3 py-1.5 text-xs text-primary hover:bg-primary/25"
               >
                 确认导出

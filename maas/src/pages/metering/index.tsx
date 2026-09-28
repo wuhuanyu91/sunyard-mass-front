@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 import { Download, FileText, Repeat, Activity, CheckCircle2 } from 'lucide-react';
 import { api } from '../../services/api';
-import type { PlatformSummary, DeptTco } from '../../services/api';
+import type { PlatformSummary, DeptTco, RoiInfo } from '../../services/api';
 import type { ApplicationRegistry, MeteringRecord, ModelAsset, OptimizeAdvice } from '../../types';
 import Panel from '../../components/ui/Panel';
 import PageHeader from '../../components/ui/PageHeader';
@@ -72,6 +72,7 @@ function MeteringOverview() {
   const [advice, setAdvice] = useState<OptimizeAdvice[]>([]);
   const [summary, setSummary] = useState<PlatformSummary | null>(null);
   const [deptTco, setDeptTco] = useState<DeptTco[]>([]);
+  const [roi, setRoi] = useState<RoiInfo | null>(null);
   const [appRank, setAppRank] = useState<{ appId: string; name: string; tokens: number; tco: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [retryIncluded, setRetryIncluded] = useState(false);
@@ -84,8 +85,8 @@ function MeteringOverview() {
   const [calib, setCalib] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.getMetering(), api.getApps(), api.getAssets(), api.getOptimizeAdvice(), api.getSummary(), api.getDeptTco(), api.getAppTcoRank()]).then(
-      ([me, ap, as_, ad, su, dt, ar]) => {
+    Promise.all([api.getMetering(), api.getApps(), api.getAssets(), api.getOptimizeAdvice(), api.getSummary(), api.getDeptTco(), api.getAppTcoRank(), api.getRoi().catch(() => null)]).then(
+      ([me, ap, as_, ad, su, dt, ar, roi_]) => {
         setMetering(me);
         setApps(ap);
         setAssets(as_);
@@ -93,6 +94,7 @@ function MeteringOverview() {
         setSummary(su);
         setDeptTco(dt);
         setAppRank(ar);
+        setRoi(roi_);
         setLoading(false);
         const pre = params.get('appId');
         if (pre) setAppFilter(pre);
@@ -231,6 +233,30 @@ function MeteringOverview() {
         >
           <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-text-primary transition-all ${retryIncluded ? 'left-[22px]' : 'left-0.5'}`} />
         </button>
+      </div>
+
+      {/* 投入产出（ROI）综合分析（公告一-4）：真实成本投入 vs 模型价值/落地节省 */}
+      <div className="grid grid-cols-4 gap-3">
+        <div className="panel p-3">
+          <div className="text-xs text-text-secondary">本月投入成本</div>
+          <div className="num mt-1.5 text-2xl font-semibold text-danger">{fmtYuan(roi?.investment.monthCost ?? 0)}</div>
+          <div className="mt-1 text-[10px] text-text-secondary">调用量 {fmt(roi?.investment.callCount ?? 0)} 次 · 活跃应用 {roi?.investment.activeApps ?? 0} 个 · 活跃模型 {roi?.investment.activeModels ?? 0} 个</div>
+        </div>
+        <div className="panel p-3">
+          <div className="text-xs text-text-secondary">年化节省（已落地优化建议）</div>
+          <div className="num mt-1.5 text-2xl font-semibold text-success">{fmtYuan(roi?.saving.annualizedSaving ?? 0)}</div>
+          <div className="mt-1 text-[10px] text-text-secondary">已落地建议 {roi?.saving.landedAdvices ?? 0} 条 · 月节省 {fmtYuan(roi?.saving.monthlySaving ?? 0)}</div>
+        </div>
+        <div className="panel p-3">
+          <div className="text-xs text-text-secondary">模型价值（评测均分）</div>
+          <div className="num mt-1.5 text-2xl font-semibold text-primary">{roi?.modelValue.avgScore ?? 0}<span className="text-sm text-text-secondary"> 分</span></div>
+          <div className="mt-1 text-[10px] text-text-secondary">评测 {roi?.modelValue.evalCount ?? 0} 次 · 通过率 {roi?.modelValue.passRate ?? 0}%</div>
+        </div>
+        <div className="panel p-3">
+          <div className="text-xs text-text-secondary">投入产出比（年化节省 ÷ 本月投入）</div>
+          <div className="num mt-1.5 text-2xl font-semibold text-warning">{roi?.roiRatio != null ? `${roi.roiRatio} : 1` : '—'}</div>
+          <div className="mt-1 text-[10px] text-text-secondary">{roi?.archiveValue.activeArchives ? `在档模型 ${roi.archiveValue.activeArchives} 个 · ` : ''}数据来源：计价落库成本 + 评测结论 + 优化建议闭环</div>
+        </div>
       </div>
 
       {/* 部门排行 + TCO 旭日图（6.5.2） */}
@@ -528,8 +554,19 @@ function MeteringOverview() {
               </button>
               <button
                 onClick={() => {
+                  // 真实生成 CSV 文件下载（替代此前的 alert 假成功）
+                  const header = 'billId,traceId,tenantId,deptId,appId,assetId,modelVersion,requestCount,promptTokens,completionTokens,cacheHitTokens,gpuHours,costInfra,costCompute,costLicense,costExternal,tcoTotal';
+                  const csv = [header, ...filtered.map((r) =>
+                    [r.billId, r.traceId, r.tenantId, r.deptId, r.appId, r.assetId, r.modelVersion, r.requestCount, r.promptTokens, r.completionTokens, r.cacheHitTokens, r.gpuHours, r.costInfra.toFixed(2), r.costCompute.toFixed(2), r.costLicense.toFixed(2), r.costExternal.toFixed(2), r.tcoTotal.toFixed(2)]
+                      .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+                  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `metering-daily-${new Date().toISOString().slice(0, 10)}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
                   setExportOpen(false);
-                  window.alert('日报 CSV 已生成（含字段范围与脱敏规则），将推送至报表服务与部门负责人邮箱');
                 }}
                 className="rounded bg-primary/15 px-3 py-1.5 text-xs text-primary hover:bg-primary/25"
               >
