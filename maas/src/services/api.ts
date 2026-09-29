@@ -1917,7 +1917,7 @@ export const api = {
   },
   resetUserPassword(userId: string): Promise<OperationRecord> {
     return http
-      .patch(`/internal/rbac/users/${userId}/state`, { password: 'Mas@123456', pwdMustChange: 1, opType: '重置密码', detail: '密码已重置，首次登录强制修改并留痕' })
+      .patch(`/internal/rbac/users/${userId}/state`, { password: 'Sunyard@123', pwdMustChange: 1, opType: '重置密码', detail: '密码已重置，首次登录强制修改并留痕' })
       .then(() => okRec('重置密码', userId, '密码已重置，首次登录强制修改并留痕'));
   },
   addSysUser(u: Omit<SysUser, 'userId' | 'lastLoginAt'>): Promise<OperationRecord> {

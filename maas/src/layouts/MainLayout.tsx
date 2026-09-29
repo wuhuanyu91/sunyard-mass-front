@@ -972,7 +972,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: Pick<LoginResult, 'userCode'
                   value={pw}
                   onChange={(e) => setPw(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && submit()}
-                  placeholder="请输入密码（初始 Mas@123456）"
+                  placeholder="请输入密码（初始 Sunyard@123）"
                   aria-label="密码"
                   className="w-full rounded-md border border-[#d9dee6] bg-white py-2.5 pl-10 pr-3.5 text-sm text-[#1f2937] shadow-sm outline-none transition-all placeholder:text-[#9aa3af] focus:border-[#2563e9] focus:ring-2 focus:ring-[#2563e9]/15"
                 />
@@ -993,7 +993,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: Pick<LoginResult, 'userCode'
                 '登 录'
               )}
             </button>
-            <p className="text-[11px] leading-relaxed text-[#8a8f99]">演示账号 admin / operator / auditor，初始密码 Mas@123456，登录后请及时修改；登录行为全程审计留痕，连续失败 5 次自动锁定。</p>
+            <p className="text-[11px] leading-relaxed text-[#8a8f99]">演示账号 admin / operator / auditor，初始密码 Sunyard@123，登录后请及时修改；登录行为全程审计留痕，连续失败 5 次自动锁定。</p>
             <p className="pt-4 text-center text-[11px] leading-relaxed text-[#8a8f99]/70">
               © 2026 信雅达 · 星舰智能 STARSHIP · STARSHIP-MAAS 平台
             </p>
