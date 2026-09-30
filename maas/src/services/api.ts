@@ -355,23 +355,34 @@ export const api = {
     return http
       .get<Record<string, unknown>[]>('/internal/compute/nodes', { hours: 24 })
       .then(async (rows) => {
-        const list = (rows || []).map((r) => ({
-          resourceId: String(r.nodeId ?? ''),
-          name: String(r.nodeId ?? ''),
-          pool: String(r.nodeId ?? ''),
-          vendor: '行内集群',
-          gpuType: '—',
-          gpuCount: 0,
-          gpuUtil: Number(r.gpuUtil ?? 0),
-          gpuMemUtil: Number(r.gpuMemUtil ?? 0),
-          vgpuEnabled: false,
-          quantLevel: 'FP16',
-          replicas: 0,
-          status: 'ONLINE' as ComputeResource['status'],
-          gpuHours: Number(r.gpuHours ?? 0),
-          requests: Number(r.requests ?? 0),
-          tokens: Number(r.tokens ?? 0),
-        })) as unknown as ComputeResource[];
+        // 后端 /internal/compute/nodes 仅上报 nodeId/gpuUtil/gpuMemUtil/gpuHours/requests/tokens；
+        // 这里补齐 ComputeResource 契约字段，未采集到的维度按“无数据”取中性值（0 / —），
+        // 避免下游 KPI（队列深度求和）、拓扑（utilization%）、节点详情抽屉出现 NaN / undefined。
+        const list = (rows || []).map((r) => {
+          const nodeId = String(r.nodeId ?? '');
+          return {
+            resourceId: nodeId,
+            resourceType: 'GPU' as ComputeResource['resourceType'],
+            vendor: '行内集群',
+            architecture: '—',
+            cluster: '行内主集群',
+            node: nodeId,
+            pool: nodeId,
+            status: 'RUNNING' as ComputeResource['status'],
+            vramTotal: Number(r.vramTotalGb ?? 0),
+            vramUsed: Number(r.vramUsedGb ?? 0),
+            utilization: Math.round(Number(r.gpuUtil ?? 0)),
+            instanceCount: Number(r.instanceCount ?? 0),
+            queueDepth: Number(r.queueDepth ?? 0),
+            costTag: 'LOCAL' as ComputeResource['costTag'],
+            // 透传原始采集量，供热区/趋势图使用
+            gpuUtil: Number(r.gpuUtil ?? 0),
+            gpuMemUtil: Number(r.gpuMemUtil ?? 0),
+            gpuHours: Number(r.gpuHours ?? 0),
+            requests: Number(r.requests ?? 0),
+            tokens: Number(r.tokens ?? 0),
+          };
+        }) as unknown as ComputeResource[];
         const maint = await loadConfig<{ resourceId: string; maintenance: boolean }[]>(CONFIG_KEYS.nodeMaintenance, []);
         const maintMap = new Map(maint.filter((m) => m.maintenance).map((m) => [m.resourceId, true]));
         return list.map((r) => (maintMap.has(r.resourceId) ? { ...r, status: 'MAINTENANCE' as ComputeResource['status'] } : r));
@@ -1917,8 +1928,8 @@ export const api = {
   },
   resetUserPassword(userId: string): Promise<OperationRecord> {
     return http
-      .patch(`/internal/rbac/users/${userId}/state`, { password: 'Sunyard@123', pwdMustChange: 1, opType: '重置密码', detail: '密码已重置，首次登录强制修改并留痕' })
-      .then(() => okRec('重置密码', userId, '密码已重置，首次登录强制修改并留痕'));
+      .patch(`/internal/rbac/users/${userId}/state`, { password: 'Sunyard@123', pwdMustChange: 1, opType: '重置密码', detail: '密码已重置为初始密码，首次登录强制修改并留痕' })
+      .then(() => okRec('重置密码', userId, '密码已重置为初始密码，首次登录强制修改并留痕'));
   },
   addSysUser(u: Omit<SysUser, 'userId' | 'lastLoginAt'>): Promise<OperationRecord> {
     return http

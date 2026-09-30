@@ -9,19 +9,23 @@ import { useNotify } from '../../components/ui/Toast';
 
 const fmt = (n: number) => n.toLocaleString('zh-CN');
 const fmtYuan = (n: number) => `¥${fmt(Math.round(n))}`;
-const fmtWanTok = (n: number) => (n >= 100_000_000 ? `${(n / 100_000_000).toFixed(2)} 亿` : `${(n / 10_000).toFixed(0)} 万`);
+const fmtWanTok = (n: number) =>
+  n >= 100_000_000 ? `${(n / 100_000_000).toFixed(2)} 亿` : n >= 10_000 ? `${(n / 10_000).toFixed(1)} 万` : `${fmt(n)}`;
 
 /** P1-11 月度账单中心（P24：月度账单汇总 + 环比 + 导出） */
 export default function MonthlyBilling() {
   const notify = useNotify();
   const [bills, setBills] = useState<MonthlyBill[]>([]);
   const [loading, setLoading] = useState(true);
-  const [month, setMonth] = useState('2026-08');
+  const [month, setMonth] = useState('');
 
   useEffect(() => {
     api.getMonthlyBills().then((b) => {
       setBills(b);
       setLoading(false);
+      // 默认选中数据里最新的月份（此前写死 2026-08，与真实账单月份不符导致整页为空）
+      const latest = [...new Set(b.map((x) => x.month))].sort().reverse()[0] ?? '';
+      setMonth((cur) => cur || latest);
     });
   }, []);
 
@@ -61,7 +65,7 @@ export default function MonthlyBilling() {
         <div className="flex items-center gap-2">
           <select value={month} onChange={(e) => setMonth(e.target.value)} className="rounded border border-border-default bg-bg-page px-2 py-1.5 text-xs text-text-primary">
             {months.map((m) => (
-              <option key={m} value={m}>{m}{m === '2026-08' ? '（本月至今）' : ''}</option>
+              <option key={m} value={m}>{m}{m === months[0] ? '（本月至今）' : ''}</option>
             ))}
           </select>
           <button onClick={exportCsv} className={`flex items-center gap-1 ${BTN_PRIMARY}`}>

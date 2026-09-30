@@ -41,7 +41,7 @@ export default function EmergencyConsole() {
       setTickets(t);
       setAssets(a);
       setApps(ap);
-      setDegModel(a[5]?.assetId ?? '');
+      setDegModel(a[5]?.assetId ?? a[0]?.assetId ?? '');
       setLoading(false);
     });
   }, []);

@@ -162,7 +162,7 @@ export default function UserPanel() {
                       <button disabled={readOnly || isSuper} onClick={() => openEdit(u)} className={`flex items-center gap-1 ${BTN_GHOST}`} title={isSuper ? '超级管理员信息不可编辑' : '编辑部门/角色/双因素'}>
                         <Pencil size={12} /> 编辑
                       </button>
-                      <button disabled={readOnly} onClick={() => act(() => api.resetUserPassword(u.userId), `${u.name} 密码已重置`)} className={`flex items-center gap-1 ${BTN_GHOST}`} title={readOnly ? '只读模式下写操作已禁用' : '重置密码，首次登录强制修改'}>
+                      <button disabled={readOnly} onClick={() => act(() => api.resetUserPassword(u.userId), `${u.name} 密码已重置为初始密码，首次登录强制修改`)} className={`flex items-center gap-1 ${BTN_GHOST}`} title={readOnly ? '只读模式下写操作已禁用' : '重置密码，首次登录强制修改'}>
                         <KeyRound size={12} /> 重置密码
                       </button>
                       <button
